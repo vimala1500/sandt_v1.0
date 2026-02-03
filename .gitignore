@@ -20,6 +20,10 @@ wheels/
 .installed.cfg
 *.egg
 
+# Environment
+.env
+.env.local
+
 # Data files
 *.parquet
 *.hdf5
@@ -27,6 +31,9 @@ wheels/
 *.zarr
 *.json
 data/
+indicators/
+backtests/
+stock_data/
 output/
 results/
 

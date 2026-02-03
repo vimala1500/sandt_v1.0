@@ -22,7 +22,7 @@ class DataLoader:
     - Returns pandas DataFrames with DatetimeIndex
     """
     
-    def __init__(self, data_path: str = "/content/drive/MyDrive/stock_data"):
+    def __init__(self, data_path: str = "./data/stock_data"):
         """
         Initialize DataLoader with path to Parquet files.
         

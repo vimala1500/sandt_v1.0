@@ -30,9 +30,9 @@ class Pipeline:
     
     def __init__(
         self,
-        data_path: str = "/content/drive/MyDrive/stock_data",
-        indicator_path: str = "/content/drive/MyDrive/indicators",
-        backtest_path: str = "/content/drive/MyDrive/backtests"
+        data_path: str = "./data/stock_data",
+        indicator_path: str = "./data/indicators",
+        backtest_path: str = "./data/backtests"
     ):
         """
         Initialize pipeline with paths.
@@ -280,19 +280,19 @@ def main():
     
     parser.add_argument(
         '--data-path',
-        default='/content/drive/MyDrive/stock_data',
+        default='./data/stock_data',
         help='Path to Parquet stock data'
     )
     
     parser.add_argument(
         '--indicator-path',
-        default='/content/drive/MyDrive/indicators',
+        default='./data/indicators',
         help='Path to store indicators'
     )
     
     parser.add_argument(
         '--backtest-path',
-        default='/content/drive/MyDrive/backtests',
+        default='./data/backtests',
         help='Path to store backtest results'
     )
     

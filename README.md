@@ -191,8 +191,14 @@ Verify indicators were created successfully:
 ls -lh data/indicators/
 # Should see: indicators.h5 and config.json
 
-# List available symbols with indicators
-python -c "from indicator_engine import IndicatorEngine; engine = IndicatorEngine('./data/indicators'); print(f'Symbols with indicators: {len(engine.list_available_symbols())}')"
+# List available symbols with indicators  
+python -c "
+from indicator_engine import IndicatorEngine
+engine = IndicatorEngine('./data/indicators')
+symbols = engine.list_available_symbols()
+print(f'Symbols with indicators: {len(symbols)}')
+print(f'Symbols: {symbols}')
+"
 ```
 
 ### Step 3: Ready to Use!
@@ -292,8 +298,9 @@ python main.py --mode full \
 ### Input: Stock Data
 - **Location**: `./data/prices/` (default) or custom path
 - **Format**: Parquet files, one per symbol (e.g., `AAPL.parquet`)
-- **Required Columns**: Date/DATE, Open/OPEN, High/HIGH, Low/LOW, Close/CLOSE, Volume/VOLUME
-  - Column names are case-insensitive (automatically normalized)
+- **Required Columns**: Date, Open, High, Low, Close, Volume
+  - Column names are **case-insensitive** (e.g., `DATE`, `date`, or `Date` all work)
+  - The data loader automatically normalizes column names to title case
 
 ### Output: Indicators
 - **Location**: `./data/indicators/` (default) or custom path

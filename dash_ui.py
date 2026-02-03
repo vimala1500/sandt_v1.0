@@ -17,6 +17,9 @@ from scanner import Scanner
 from indicator_engine import IndicatorEngine
 from backtest_engine import BacktestEngine
 
+# Data path options to check for price data
+DEFAULT_DATA_PATHS = ['./data/prices', './data/stock_data', '../data/prices']
+
 
 class DashUI:
     """
@@ -327,9 +330,8 @@ class DashUI:
                 import os
                 
                 # Determine data path - try common locations
-                data_paths = ['./data/prices', './data/stock_data', '../data/prices']
                 data_path = None
-                for path in data_paths:
+                for path in DEFAULT_DATA_PATHS:
                     if os.path.exists(path):
                         data_path = path
                         break

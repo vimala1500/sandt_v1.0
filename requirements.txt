@@ -13,6 +13,9 @@ dash>=2.14.0
 dash-bootstrap-components>=1.5.0
 plotly>=5.17.0
 
+# Web server for production
+gunicorn>=21.2.0
+
 # Google Drive integration
 gdown>=4.7.0
 

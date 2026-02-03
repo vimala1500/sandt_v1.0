@@ -27,6 +27,9 @@ wheels/
 *.zarr
 *.json
 data/
+indicators/
+backtests/
+stock_data/
 output/
 results/
 

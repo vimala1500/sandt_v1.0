@@ -26,7 +26,7 @@ class IndicatorEngine:
     - Supports batch processing across multiple symbols
     """
     
-    def __init__(self, output_path: str = "/content/drive/MyDrive/indicators"):
+    def __init__(self, output_path: str = "./data/indicators"):
         """
         Initialize IndicatorEngine.
         

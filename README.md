@@ -1,11 +1,11 @@
 # Stock Analysis & Trading System (sandt_v1.0)
 
-A complete, modular stock analysis and backtesting system optimized for Google Colab + Google Drive workflow. Features Numba-accelerated vectorized backtests, technical indicator computation, live scanning, and interactive Dash UI.
+A complete, modular stock analysis and backtesting system with web UI. Features Numba-accelerated vectorized backtests, technical indicator computation, live scanning, and interactive Dash UI. Deployable locally, on Google Colab, or as a web service on Railway.
 
 ## Features
 
 ### Core Capabilities
-- **Parquet OHLCV Processing**: Symbol-wise stock price data loading from Google Drive
+- **Parquet OHLCV Processing**: Symbol-wise stock price data loading from local filesystem
 - **Technical Indicators**: SMA and RSI computation with configurable periods (stored in HDF5/JSON)
 - **Multiple Strategies**: 
   - Moving Average Crossover (arbitrary fast/slow pairs)
@@ -15,7 +15,7 @@ A complete, modular stock analysis and backtesting system optimized for Google C
   - Results stored as Zarr chunked arrays for efficiency
 - **Live Scanner**: Find stocks matching conditions (e.g., RSI < 20) with backtest cross-reference
 - **Interactive Dash UI**: Web-based interface for scanning and results visualization
-- **Colab-Optimized**: Fully integrated with Google Drive for data persistence
+- **Flexible Deployment**: Run locally, on Google Colab, or deploy as a web service
 
 ### Performance Metrics
 All backtests output standardized metrics per [strategy, symbol] pair:
@@ -29,29 +29,55 @@ All backtests output standardized metrics per [strategy, symbol] pair:
 
 ```
 sandt_v1.0/
-├── main.py                   # Pipeline orchestration
-├── data_loader.py            # Parquet OHLCV data loading
-├── indicator_engine.py       # SMA/RSI computation, HDF5/JSON storage
-├── strategy.py               # Strategy registry and parameterization
-├── backtest_engine.py        # Numba-accelerated backtests, Zarr output
-├── scanner.py                # Live scanning with backtest cross-reference
-├── dash_ui.py                # Interactive Dash web UI
+├── app.py                     # Production web server entry point
+├── main.py                    # Pipeline orchestration
+├── data_loader.py             # Parquet OHLCV data loading
+├── indicator_engine.py        # SMA/RSI computation, HDF5/JSON storage
+├── strategy.py                # Strategy registry and parameterization
+├── backtest_engine.py         # Numba-accelerated backtests, Zarr output
+├── scanner.py                 # Live scanning with backtest cross-reference
+├── dash_ui.py                 # Interactive Dash web UI
 ├── notebooks/
-│   └── colab_quickstart.ipynb  # End-to-end Colab demo
-├── requirements.txt          # Python dependencies
-└── README.md                 # This file
+│   └── colab_quickstart.ipynb # End-to-end Colab demo
+├── Procfile                   # Railway/Heroku deployment config
+├── railway.json               # Railway-specific configuration
+├── requirements.txt           # Python dependencies
+└── README.md                  # This file
 ```
 
 ## Installation
 
-### Google Colab (Recommended)
+### Railway Deployment (Web Service)
 
-```python
-# In Colab notebook
-!git clone https://github.com/vimala1500/sandt_v1.0.git
-%cd sandt_v1.0
-!pip install -r requirements.txt
-```
+Deploy directly to Railway for a production web service:
+
+1. **Fork this repository** to your GitHub account
+
+2. **Connect to Railway**:
+   - Go to [Railway.app](https://railway.app)
+   - Click "New Project" → "Deploy from GitHub repo"
+   - Select your forked repository
+
+3. **Configure Environment** (optional):
+   ```
+   INDICATOR_PATH=./data/indicators
+   BACKTEST_PATH=./data/backtests
+   PORT=8050
+   ```
+
+4. **Railway will automatically**:
+   - Install dependencies from `requirements.txt`
+   - Start the web server using `Procfile`
+   - Expose your Dash UI at the generated Railway URL
+
+⚠️ **Important Notes about Railway Storage**:
+- Railway uses **ephemeral filesystem** - data is lost on redeploy/restart
+- Pre-computed indicators/backtests should be committed to Git (if small) or use external storage
+- For persistent data storage, consider:
+  - **Railway Volumes**: Persistent storage (paid feature)
+  - **AWS S3 / Google Cloud Storage**: Store data files externally
+  - **Remote Database**: Store processed data in PostgreSQL/MongoDB
+  - **Pre-deployment**: Run backtests locally, commit results to Git
 
 ### Local Installation
 
@@ -61,9 +87,39 @@ cd sandt_v1.0
 pip install -r requirements.txt
 ```
 
+### Google Colab
+
+```python
+# In Colab notebook
+!git clone https://github.com/vimala1500/sandt_v1.0.git
+%cd sandt_v1.0
+!pip install -r requirements.txt
+```
+
 ## Quick Start
 
-### 1. Using Colab Notebook (Easiest)
+### 1. Web UI (Production/Railway)
+
+For Railway deployment, the Dash UI starts automatically. For local development:
+
+```bash
+# Start the web server
+python app.py
+
+# Or use gunicorn for production-like environment
+gunicorn app:server --bind 0.0.0.0:8050 --workers 2
+```
+
+Then open your browser to `http://localhost:8050`
+
+**Environment Variables**:
+- `PORT`: Server port (default: 8050)
+- `HOST`: Server host (default: 0.0.0.0)
+- `INDICATOR_PATH`: Path to indicators (default: ./data/indicators)
+- `BACKTEST_PATH`: Path to backtests (default: ./data/backtests)
+- `DEBUG`: Enable debug mode (default: False)
+
+### 2. Using Colab Notebook
 
 Open `notebooks/colab_quickstart.ipynb` in Google Colab and run all cells. The notebook demonstrates:
 - Google Drive mounting
@@ -73,26 +129,26 @@ Open `notebooks/colab_quickstart.ipynb` in Google Colab and run all cells. The n
 - Live scanning
 - UI launch
 
-### 2. Using Python Scripts
+### 3. Using Python Scripts (Local)
 
 ```python
 from main import Pipeline
 
-# Initialize pipeline
+# Initialize pipeline with local paths
 pipeline = Pipeline(
-    data_path='/content/drive/MyDrive/stock_data',
-    indicator_path='/content/drive/MyDrive/indicators',
-    backtest_path='/content/drive/MyDrive/backtests'
+    data_path='./data/stock_data',
+    indicator_path='./data/indicators',
+    backtest_path='./data/backtests'
 )
 
 # Run complete pipeline
 pipeline.run_full_pipeline()
 ```
 
-### 3. Command Line Interface
+### 4. Command Line Interface
 
 ```bash
-# Full pipeline
+# Full pipeline with default local paths
 python main.py --mode full
 
 # Indicators only
@@ -103,10 +159,56 @@ python main.py --mode backtest
 
 # Custom paths
 python main.py --mode full \
-    --data-path /path/to/data \
-    --indicator-path /path/to/indicators \
-    --backtest-path /path/to/backtests
+    --data-path ./my_data \
+    --indicator-path ./my_indicators \
+    --backtest-path ./my_backtests
 ```
+
+## Data Organization
+
+### Input: Stock Data
+- **Location**: `./data/stock_data/` (local) or custom path
+- **Format**: Parquet files, one per symbol (e.g., `AAPL.parquet`)
+- **Required Columns**: Date, Open, High, Low, Close, Volume
+
+### Output: Indicators
+- **Location**: `./data/indicators/` (local) or custom path
+- **Files**:
+  - `indicators.h5`: HDF5 database with indicator time series
+  - `config.json`: Indicator configuration metadata
+
+### Output: Backtests
+- **Location**: `./data/backtests/` (local) or custom path
+- **Files**:
+  - `results.zarr/`: Zarr chunked arrays with detailed results
+  - `summary.parquet`: Summary statistics for all backtests
+  - `metadata.json`: Backtest configuration metadata
+
+### Data Persistence for Railway
+
+Railway uses **ephemeral storage** - files are deleted on restart. Options for persistence:
+
+1. **Railway Volumes** (Recommended for production):
+   ```bash
+   # Mount a volume to /app/data in Railway dashboard
+   # Update environment variables:
+   INDICATOR_PATH=/app/data/indicators
+   BACKTEST_PATH=/app/data/backtests
+   ```
+
+2. **External Storage** (S3, GCS):
+   - Store data files in S3/GCS buckets
+   - Modify loader classes to read from cloud storage
+   - Use libraries like `boto3` (AWS) or `google-cloud-storage`
+
+3. **Commit Pre-computed Results**:
+   - Run backtests locally
+   - Commit small result files to Git
+   - UI displays pre-computed data
+
+4. **Database Backend**:
+   - Replace file storage with PostgreSQL/MongoDB
+   - Railway provides managed databases
 
 ## Usage Examples
 
@@ -116,13 +218,13 @@ python main.py --mode full \
 from data_loader import DataLoader
 from indicator_engine import IndicatorEngine
 
-# Load data
-loader = DataLoader('/content/drive/MyDrive/stock_data')
+# Load data (use local paths)
+loader = DataLoader('./data/stock_data')
 symbols = ['AAPL', 'GOOGL', 'MSFT']
 data_dict = loader.load_multiple_symbols(symbols)
 
 # Compute indicators
-engine = IndicatorEngine('/content/drive/MyDrive/indicators')
+engine = IndicatorEngine('./data/indicators')
 engine.process_multiple_symbols(
     data_dict,
     sma_periods=[20, 50, 200],
@@ -138,7 +240,7 @@ from backtest_engine import BacktestEngine
 from strategy import DEFAULT_STRATEGIES
 
 # Initialize
-backtest_engine = BacktestEngine('/content/drive/MyDrive/backtests')
+backtest_engine = BacktestEngine('./data/backtests')
 
 # Run backtests
 strategy_configs = list(DEFAULT_STRATEGIES.values())
@@ -189,32 +291,17 @@ top = scanner.get_top_performers(
 from dash_ui import create_app
 
 ui = create_app(
-    indicator_path='/content/drive/MyDrive/indicators',
-    backtest_path='/content/drive/MyDrive/backtests'
+    indicator_path='./data/indicators',
+    backtest_path='./data/backtests'
 )
 
 ui.run(host='0.0.0.0', port=8050, debug=False)
 ```
 
-## Data Organization
-
-### Input: Stock Data
-- **Location**: `/content/drive/MyDrive/stock_data/`
-- **Format**: Parquet files, one per symbol (e.g., `AAPL.parquet`)
-- **Required Columns**: Date, Open, High, Low, Close, Volume
-
-### Output: Indicators
-- **Location**: `/content/drive/MyDrive/indicators/`
-- **Files**:
-  - `indicators.h5`: HDF5 database with indicator time series
-  - `config.json`: Indicator configuration metadata
-
-### Output: Backtests
-- **Location**: `/content/drive/MyDrive/backtests/`
-- **Files**:
-  - `results.zarr/`: Zarr chunked arrays with detailed results
-  - `summary.parquet`: Summary statistics for all backtests
-  - `metadata.json`: Backtest configuration metadata
+Or simply run:
+```bash
+python app.py
+```
 
 ## Strategies
 

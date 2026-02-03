@@ -31,8 +31,8 @@ class DashUI:
     
     def __init__(
         self,
-        indicator_path: str = "/content/drive/MyDrive/indicators",
-        backtest_path: str = "/content/drive/MyDrive/backtests"
+        indicator_path: str = "./data/indicators",
+        backtest_path: str = "./data/backtests"
     ):
         """
         Initialize Dash UI.
@@ -287,8 +287,8 @@ class DashUI:
         self.app.run_server(host=host, port=port, debug=debug)
 
 
-def create_app(indicator_path: str = "/content/drive/MyDrive/indicators",
-               backtest_path: str = "/content/drive/MyDrive/backtests"):
+def create_app(indicator_path: str = "./data/indicators",
+               backtest_path: str = "./data/backtests"):
     """
     Factory function to create and return Dash app instance.
     

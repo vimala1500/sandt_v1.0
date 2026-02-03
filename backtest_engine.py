@@ -73,7 +73,7 @@ class BacktestEngine:
     - Stores metadata to JSON and Parquet
     """
     
-    def __init__(self, output_path: str = "/content/drive/MyDrive/backtests"):
+    def __init__(self, output_path: str = "./data/backtests"):
         """
         Initialize BacktestEngine.
         

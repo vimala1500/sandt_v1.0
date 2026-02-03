@@ -297,6 +297,7 @@ class BacktestEngine:
             # If zarr storage fails, log but don't fail the backtest
             # The summary Parquet file still contains all the important metrics
             print(f"Warning: Could not store detailed results to Zarr: {e}")
+            print("Note: Summary metrics are still saved to Parquet. Check zarr version and filesystem permissions.")
     
     def _update_metadata(self, strategy_configs: List[StrategyConfig], symbols: List[str]):
         """

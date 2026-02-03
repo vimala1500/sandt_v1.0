@@ -13,13 +13,13 @@ INDICATOR_PATH = os.environ.get('INDICATOR_PATH', './data/indicators')
 BACKTEST_PATH = os.environ.get('BACKTEST_PATH', './data/backtests')
 
 # Create and configure the Dash app
-dash_ui = create_app(
+app_instance = create_app(
     indicator_path=INDICATOR_PATH,
     backtest_path=BACKTEST_PATH
 )
 
 # The Dash app's Flask server (for gunicorn/uvicorn)
-server = dash_ui.app.server
+server = app_instance.app.server
 
 if __name__ == '__main__':
     # For local development
@@ -28,4 +28,4 @@ if __name__ == '__main__':
     host = os.environ.get('HOST', '0.0.0.0')
     debug = os.environ.get('DEBUG', 'False').lower() == 'true'
     
-    dash_ui.run(host=host, port=port, debug=debug)
+    app_instance.run(host=host, port=port, debug=debug)

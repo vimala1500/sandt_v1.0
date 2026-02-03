@@ -1,0 +1,20 @@
+# Core dependencies
+pandas>=2.0.0
+numpy>=1.24.0
+numba>=0.57.0
+
+# Data storage
+pyarrow>=12.0.0
+tables>=3.8.0
+zarr>=2.16.0
+
+# Visualization and UI
+dash>=2.14.0
+dash-bootstrap-components>=1.5.0
+plotly>=5.17.0
+
+# Google Drive integration
+gdown>=4.7.0
+
+# Utilities
+tqdm>=4.66.0

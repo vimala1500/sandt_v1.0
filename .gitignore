@@ -20,6 +20,10 @@ wheels/
 .installed.cfg
 *.egg
 
+# Environment
+.env
+.env.local
+
 # Data files
 *.parquet
 *.hdf5

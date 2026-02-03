@@ -55,6 +55,9 @@ class DataLoader:
         try:
             df = pd.read_parquet(file_path)
             
+            # Normalize column names to title case for consistency
+            df.columns = df.columns.str.title()
+            
             # Ensure datetime index
             if 'Date' in df.columns:
                 df['Date'] = pd.to_datetime(df['Date'])

@@ -2,6 +2,24 @@
 
 A complete, modular stock analysis and backtesting system with web UI. Features Numba-accelerated vectorized backtests, technical indicator computation, live scanning, and interactive Dash UI. Deployable locally, on Google Colab, or as a web service on Railway.
 
+## System Workflow
+
+```
+📁 Price Data (Parquet)          ← Input: OHLCV data per symbol
+         ↓
+🔧 Compute Indicators            ← REQUIRED: Run compute_indicators.py
+         ↓
+💾 Indicators Store              ← Output: HDF5/JSON with SMA, RSI
+         ↓
+    ┌────┴────┐
+    ↓         ↓
+🎯 Scanner  📊 Backtests         ← Analysis & Strategy Testing
+    ↓         ↓
+🌐 Web UI (Dash)                 ← Interactive Dashboard
+```
+
+**Critical Step**: The indicator computation (`compute_indicators.py`) is REQUIRED before using any other features. See [First-Time Setup](#first-time-setup-required) below.
+
 ## Features
 
 ### Core Capabilities
@@ -70,6 +88,23 @@ Deploy directly to Railway for a production web service:
    - Start the web server using `Procfile`
    - Expose your Dash UI at the generated Railway URL
 
+5. **⚠️ IMPORTANT: Compute Indicators on Railway**:
+   
+   After deployment, you MUST compute indicators before the UI will work:
+   
+   a. Open Railway project dashboard → Select your service
+   
+   b. Go to "Settings" tab → Click "Deploy" section → Open "Deploy Logs"
+   
+   c. Click "Shell" or "Terminal" button to open Railway shell
+   
+   d. In the Railway shell, run:
+   ```bash
+   python compute_indicators.py
+   ```
+   
+   This will process the Parquet files in `data/prices/` and create indicators.
+
 ⚠️ **Important Notes about Railway Storage**:
 - Railway uses **ephemeral filesystem** - data is lost on redeploy/restart
 - Pre-computed indicators/backtests should be committed to Git (if small) or use external storage
@@ -95,6 +130,79 @@ pip install -r requirements.txt
 %cd sandt_v1.0
 !pip install -r requirements.txt
 ```
+
+## First-Time Setup (REQUIRED)
+
+⚠️ **Important**: Before using the scanner or web UI, you MUST compute indicators from your price data.
+
+### Prerequisites
+
+Ensure you have price data in Parquet format in the `data/prices/` directory:
+```
+data/prices/
+├── AAPL.parquet
+├── GOOGL.parquet
+├── MSFT.parquet
+└── ...
+```
+
+Each Parquet file should contain OHLCV columns: Date/DATE, Open/OPEN, High/HIGH, Low/LOW, Close/CLOSE, Volume/VOLUME
+
+### Step 1: Compute Indicators (First-Time & After Data Updates)
+
+Run the indicator computation script to generate technical indicators from your price data:
+
+```bash
+# Basic usage - processes all symbols in data/prices/
+python compute_indicators.py
+
+# Process specific symbols only
+python compute_indicators.py --symbols AAPL GOOGL MSFT
+
+# Use custom paths (e.g., on Railway shell)
+python compute_indicators.py --data-path ./data/prices --indicator-path ./data/indicators
+
+# Customize indicator periods
+python compute_indicators.py --sma-periods 10 20 50 100 200 --rsi-periods 7 14 21
+
+# See all options
+python compute_indicators.py --help
+```
+
+**What this does:**
+- Reads Parquet files from `data/prices/`
+- Computes SMA (Simple Moving Average) and RSI (Relative Strength Index) indicators
+- Saves results to:
+  - `data/indicators/indicators.h5` (HDF5 time series data)
+  - `data/indicators/config.json` (metadata)
+
+**When to run:**
+- ✅ **First-time setup** - before using the system
+- ✅ **After uploading new price data** - to include new symbols
+- ✅ **After data updates** - when you add more historical data
+- ✅ **To change indicator parameters** - different SMA/RSI periods
+
+### Step 2: Verify Indicators
+
+Verify indicators were created successfully:
+
+```bash
+# Check output files exist
+ls -lh data/indicators/
+# Should see: indicators.h5 and config.json
+
+# List available symbols with indicators
+python -c "from indicator_engine import IndicatorEngine; engine = IndicatorEngine('./data/indicators'); print(f'Symbols with indicators: {len(engine.list_available_symbols())}')"
+```
+
+### Step 3: Ready to Use!
+
+Once indicators are computed, you can:
+- 🚀 Start the web UI (see Quick Start below)
+- 📊 Run backtests
+- 🔍 Use the live scanner
+
+---
 
 ## Quick Start
 
@@ -147,14 +255,29 @@ pipeline.run_full_pipeline()
 
 ### 4. Command Line Interface
 
+#### Indicator Computation (Recommended - Use First)
+
+```bash
+# Compute indicators from Parquet files (REQUIRED first step)
+python compute_indicators.py
+
+# With custom paths
+python compute_indicators.py --data-path ./data/prices --indicator-path ./data/indicators
+
+# Process specific symbols only
+python compute_indicators.py --symbols AAPL GOOGL MSFT
+```
+
+#### Full Pipeline
+
 ```bash
 # Full pipeline with default local paths
 python main.py --mode full
 
-# Indicators only
+# Indicators only (alternative to compute_indicators.py)
 python main.py --mode indicators --symbols AAPL GOOGL MSFT
 
-# Backtests only
+# Backtests only (requires indicators to be computed first)
 python main.py --mode backtest
 
 # Custom paths
@@ -167,18 +290,20 @@ python main.py --mode full \
 ## Data Organization
 
 ### Input: Stock Data
-- **Location**: `./data/stock_data/` (local) or custom path
+- **Location**: `./data/prices/` (default) or custom path
 - **Format**: Parquet files, one per symbol (e.g., `AAPL.parquet`)
-- **Required Columns**: Date, Open, High, Low, Close, Volume
+- **Required Columns**: Date/DATE, Open/OPEN, High/HIGH, Low/LOW, Close/CLOSE, Volume/VOLUME
+  - Column names are case-insensitive (automatically normalized)
 
 ### Output: Indicators
-- **Location**: `./data/indicators/` (local) or custom path
+- **Location**: `./data/indicators/` (default) or custom path
 - **Files**:
-  - `indicators.h5`: HDF5 database with indicator time series
+  - `indicators.h5`: HDF5 database with indicator time series (SMA, RSI)
   - `config.json`: Indicator configuration metadata
+- **Generated by**: `python compute_indicators.py` (REQUIRED first step)
 
 ### Output: Backtests
-- **Location**: `./data/backtests/` (local) or custom path
+- **Location**: `./data/backtests/` (default) or custom path
 - **Files**:
   - `results.zarr/`: Zarr chunked arrays with detailed results
   - `summary.parquet`: Summary statistics for all backtests
@@ -214,13 +339,25 @@ Railway uses **ephemeral storage** - files are deleted on restart. Options for p
 
 ### Computing Indicators
 
+**Recommended Method**: Use the standalone script (easiest):
+
+```bash
+# Compute indicators for all symbols
+python compute_indicators.py
+
+# See all options
+python compute_indicators.py --help
+```
+
+**Alternative Method**: Use Python API directly:
+
 ```python
 from data_loader import DataLoader
 from indicator_engine import IndicatorEngine
 
 # Load data (use local paths)
-loader = DataLoader('./data/stock_data')
-symbols = ['AAPL', 'GOOGL', 'MSFT']
+loader = DataLoader('./data/prices')
+symbols = loader.list_available_symbols()
 data_dict = loader.load_multiple_symbols(symbols)
 
 # Compute indicators

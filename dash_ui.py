@@ -284,7 +284,7 @@ class DashUI:
             port: Port number
             debug: Debug mode
         """
-        self.app.run_server(host=host, port=port, debug=debug)
+        self.app.run(host=host, port=port, debug=debug)
 
 
 def create_app(indicator_path: str = "./data/indicators",

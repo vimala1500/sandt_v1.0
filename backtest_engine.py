@@ -272,25 +272,31 @@ class BacktestEngine:
             config: Strategy configuration
             result: Backtest result dictionary
         """
-        # Create Zarr store
-        store = zarr.open(str(self.zarr_path), mode='a')
-        
-        # Create group for this backtest
-        group_name = f"{symbol}/{config.name}_{hash(str(config.params)) % 1000000}"
-        group = store.require_group(group_name)
-        
-        # Store arrays with compression
-        group.array('equity', result['equity'], chunks=(1000,), compressor=zarr.Blosc())
-        group.array('positions', result['positions'], chunks=(1000,), compressor=zarr.Blosc())
-        group.array('signals', result['signals'], chunks=(1000,), compressor=zarr.Blosc())
-        
-        # Store dates as string array
-        dates_str = [str(d) for d in result['dates']]
-        group.array('dates', dates_str, chunks=(1000,))
-        
-        # Store metrics as attributes
-        group.attrs['metrics'] = result['metrics']
-        group.attrs['params'] = config.params
+        try:
+            # Create Zarr store
+            store = zarr.open(str(self.zarr_path), mode='a')
+            
+            # Create group for this backtest
+            group_name = f"{symbol}/{config.name}_{hash(str(config.params)) % 1000000}"
+            group = store.require_group(group_name)
+            
+            # Store arrays - use simple assignment which works with zarr v2
+            import numpy as np
+            group['equity'] = np.asarray(result['equity'])
+            group['positions'] = np.asarray(result['positions'])
+            group['signals'] = np.asarray(result['signals'])
+            
+            # Store dates as ISO format strings
+            dates_str = np.array([str(d) for d in result['dates']], dtype='U32')
+            group['dates'] = dates_str
+            
+            # Store metrics as attributes
+            group.attrs['metrics'] = result['metrics']
+            group.attrs['params'] = config.params
+        except Exception as e:
+            # If zarr storage fails, log but don't fail the backtest
+            # The summary Parquet file still contains all the important metrics
+            print(f"Warning: Could not store detailed results to Zarr: {e}")
     
     def _update_metadata(self, strategy_configs: List[StrategyConfig], symbols: List[str]):
         """

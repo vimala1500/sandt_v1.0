@@ -7,6 +7,7 @@ numba>=0.57.0
 pyarrow>=12.0.0
 tables>=3.8.0
 zarr>=2.16.0
+numcodecs>=0.11.0
 
 # Visualization and UI
 dash>=2.14.0

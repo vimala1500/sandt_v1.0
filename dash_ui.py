@@ -65,6 +65,42 @@ class DashUI:
                 ], width=12)
             ]),
             
+            # Indicator computation section
+            dbc.Row([
+                dbc.Col([
+                    dbc.Alert([
+                        html.H5("⚙️ Indicator Management", className="alert-heading"),
+                        html.P([
+                            "Before scanning, ensure indicators are computed from your price data. ",
+                            "Click below to compute/refresh indicators from Parquet files in ",
+                            html.Code("data/prices/"), "."
+                        ]),
+                        html.Hr(),
+                        dbc.Row([
+                            dbc.Col([
+                                dbc.Button(
+                                    "🔧 Compute Indicators",
+                                    id='compute-indicators-btn',
+                                    color="warning",
+                                    className="me-2",
+                                    outline=True
+                                ),
+                                dbc.Button(
+                                    "🔄 Refresh Symbol List",
+                                    id='refresh-symbols-btn',
+                                    color="secondary",
+                                    outline=True
+                                ),
+                            ], width="auto"),
+                            dbc.Col([
+                                html.Div(id='indicator-status', className="text-end")
+                            ])
+                        ], align="center", className="g-2"),
+                        html.Div(id='indicator-output', className="mt-2", style={'fontSize': '0.9em'})
+                    ], color="info", className="mb-3")
+                ], width=12)
+            ]),
+            
             dbc.Row([
                 dbc.Col([
                     dbc.Card([
@@ -274,6 +310,112 @@ class DashUI:
             
             except Exception as e:
                 return html.P(f"Error loading backtest summary: {str(e)}")
+        
+        @self.app.callback(
+            [Output('indicator-output', 'children'),
+             Output('indicator-status', 'children')],
+            Input('compute-indicators-btn', 'n_clicks'),
+            prevent_initial_call=True
+        )
+        def compute_indicators(n_clicks):
+            """Compute indicators from price data."""
+            if n_clicks is None:
+                return "", ""
+            
+            try:
+                from data_loader import DataLoader
+                import os
+                
+                # Determine data path - try common locations
+                data_paths = ['./data/prices', './data/stock_data', '../data/prices']
+                data_path = None
+                for path in data_paths:
+                    if os.path.exists(path):
+                        data_path = path
+                        break
+                
+                if data_path is None:
+                    return html.Div([
+                        html.P("❌ No price data directory found.", className="text-danger mb-1"),
+                        html.P("Expected directories: data/prices/ or data/stock_data/", 
+                               className="text-muted small")
+                    ]), html.Span("❌ Failed", className="badge bg-danger")
+                
+                # Load data
+                loader = DataLoader(data_path)
+                symbols = loader.list_available_symbols()
+                
+                if not symbols:
+                    return html.Div([
+                        html.P("❌ No Parquet files found in data directory.", className="text-danger mb-1"),
+                        html.P(f"Location: {data_path}", className="text-muted small")
+                    ]), html.Span("❌ Failed", className="badge bg-danger")
+                
+                # Show progress
+                output_msg = html.Div([
+                    html.P(f"⏳ Processing {len(symbols)} symbols from {data_path}...", 
+                           className="mb-1"),
+                    html.P("This may take a minute. Please wait...", 
+                           className="text-muted small")
+                ])
+                
+                # Load data
+                data_dict = loader.load_multiple_symbols(symbols)
+                
+                if not data_dict:
+                    return html.Div([
+                        html.P("❌ Failed to load any symbols.", className="text-danger mb-1"),
+                        html.P("Check that Parquet files have correct OHLCV columns.", 
+                               className="text-muted small")
+                    ]), html.Span("❌ Failed", className="badge bg-danger")
+                
+                # Compute indicators
+                self.indicator_engine.process_multiple_symbols(
+                    data_dict,
+                    sma_periods=[20, 50, 200],
+                    rsi_periods=[14],
+                    show_progress=False  # Disable progress bar in UI
+                )
+                
+                # Verify results
+                available = self.indicator_engine.list_available_symbols()
+                
+                return html.Div([
+                    html.P("✅ Indicators computed successfully!", className="text-success mb-1"),
+                    html.P([
+                        f"{len(available)} symbols now available. ",
+                        html.Strong("Click 'Run Scan' to use them.")
+                    ], className="small")
+                ]), html.Span(f"✅ {len(available)} symbols", className="badge bg-success")
+            
+            except Exception as e:
+                import traceback
+                error_details = traceback.format_exc()
+                return html.Div([
+                    html.P(f"❌ Error: {str(e)}", className="text-danger mb-1"),
+                    html.Details([
+                        html.Summary("Show details", className="small text-muted"),
+                        html.Pre(error_details, className="small bg-light p-2")
+                    ])
+                ]), html.Span("❌ Error", className="badge bg-danger")
+        
+        @self.app.callback(
+            Output('indicator-status', 'children', allow_duplicate=True),
+            Input('refresh-symbols-btn', 'n_clicks'),
+            prevent_initial_call=True
+        )
+        def refresh_symbols(n_clicks):
+            """Refresh the count of available symbols."""
+            if n_clicks is None:
+                return ""
+            
+            try:
+                available = self.indicator_engine.list_available_symbols()
+                if not available:
+                    return html.Span("⚠️ No symbols", className="badge bg-warning")
+                return html.Span(f"✅ {len(available)} symbols", className="badge bg-success")
+            except Exception as e:
+                return html.Span(f"❌ Error: {str(e)}", className="badge bg-danger")
     
     def run(self, host: str = '0.0.0.0', port: int = 8050, debug: bool = False):
         """

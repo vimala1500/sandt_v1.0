@@ -2,6 +2,8 @@
 
 A complete, modular stock analysis and backtesting system with web UI. Features Numba-accelerated vectorized backtests, technical indicator computation, live scanning, and interactive Dash UI. Deployable locally, on Google Colab, or as a web service on Railway.
 
+> **📌 RSI Values Match TradingView**: Our RSI implementation uses Wilder's recursive averaging method, matching TradingView exactly. To verify: `python verify_rsi.py` or see [RSI_VERIFICATION.md](RSI_VERIFICATION.md)
+
 ## System Workflow
 
 ```
@@ -517,7 +519,18 @@ The RSI calculation uses the following approach:
 
 #### Verifying Against TradingView
 
-To verify RSI values match TradingView:
+**Quick Verification**: Run the automated verification tool:
+```bash
+python verify_rsi.py
+```
+
+This will:
+- ✅ Test with Wilder's original example data (expected RSI: 70.46)
+- ✅ Show you exactly how to compare with TradingView
+- ✅ Verify edge cases (all gains, all losses, flat prices)
+- ✅ Confirm our implementation matches TradingView exactly
+
+**Manual Verification** with your own data:
 
 1. **Export your price data**:
    ```python
@@ -528,25 +541,23 @@ To verify RSI values match TradingView:
    ```
 
 2. **In TradingView**:
-   - Create a new chart
-   - Input the same price data
+   - Create a new chart for the same symbol
    - Add "Relative Strength Index" indicator
    - Set period to 14 (or your chosen period)
+   - Compare the RSI values at the same time points
 
 3. **Compare values**: The RSI values should match exactly (within rounding precision)
 
+**For complete details**, see [RSI_VERIFICATION.md](RSI_VERIFICATION.md)
+
 #### Testing RSI Implementation
 
-Run the validation test:
+Run comprehensive tests:
 ```bash
-python test_rsi_wilder.py
+python test_rsi_wilder.py         # Compare Wilder's vs EWM methods
+python test_detailed_rsi.py       # Step-by-step calculation details
+python verify_rsi.py              # Quick verification (recommended)
 ```
-
-This test:
-- Validates RSI calculation with known data
-- Compares Wilder's method vs old EWM method
-- Tests edge cases (all gains, all losses, flat prices)
-- Shows how to reproduce TradingView values
 
 #### Using RSI in Code
 

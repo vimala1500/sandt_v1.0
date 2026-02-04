@@ -1,3 +1,39 @@
+# Change Log
+
+## Version 1.1.0 - RSI Wilder's Averaging Update (2026-02-04)
+
+### RSI Indicator Implementation Update
+
+**Breaking Change**: RSI calculation now uses Wilder's recursive averaging method instead of pandas EWM.
+
+**What Changed**:
+- RSI now uses Wilder's recursive averaging: `avg[n] = (avg[n-1] * (period-1) + value[n]) / period`
+- Previous implementation used pandas `ewm()` which produces different values
+- New implementation matches TradingView's classic RSI exactly
+
+**Impact**:
+- ✅ RSI values now match TradingView and other professional platforms
+- ⚠️ RSI values will be different from previous versions
+- ✅ All modules automatically use new calculation
+- ✅ Backward compatible API (`compute_rsi()` still works)
+
+**Files Modified**:
+- `indicator_engine.py`: Added `compute_rsi_wilder()` method, updated `compute_rsi()` to call it
+- `README.md`: Added technical documentation section explaining RSI calculation
+- `test_rsi_wilder.py`: New validation test comparing old vs new method
+
+**Verification**:
+```bash
+python test_rsi_wilder.py  # Validates against TradingView values
+```
+
+**Why This Matters**:
+- Professional traders expect RSI to match TradingView/MetaTrader/Bloomberg
+- Backtests now reflect real-world trading indicators
+- Strategy signals will match what traders see on their platforms
+
+---
+
 # Railway Deployment Refactoring - Change Log
 
 ## Overview

@@ -27,6 +27,7 @@ A complete, modular stock analysis and backtesting system with web UI. Features 
 ### Core Capabilities
 - **Parquet OHLCV Processing**: Symbol-wise stock price data loading from local filesystem
 - **Technical Indicators**: SMA and RSI computation with configurable periods (stored in HDF5/JSON)
+- **🆕 Dynamic RSI Period Caching**: Scan with ANY RSI period - automatically computed and cached on-demand (See [DYNAMIC_RSI_CACHING.md](DYNAMIC_RSI_CACHING.md))
 - **Multiple Strategies**: 
   - Moving Average Crossover (arbitrary fast/slow pairs)
   - RSI Mean-Reversion (arbitrary periods/thresholds)

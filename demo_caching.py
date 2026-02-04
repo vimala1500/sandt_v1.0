@@ -155,7 +155,14 @@ def demo_caching():
     # Show sample data
     print("\nSample data (last 5 rows of first symbol):")
     sample_data = engine2.load_indicators(symbols[0])
-    print(sample_data.tail(5)[['Close', 'SMA_20', 'SMA_50', 'RSI_14', 'RSI_21']].to_string())
+    
+    # Select available columns (in case periods were changed)
+    display_cols = ['Close']
+    for col in ['SMA_20', 'SMA_50', 'RSI_14', 'RSI_21']:
+        if col in sample_data.columns:
+            display_cols.append(col)
+    
+    print(sample_data.tail(5)[display_cols].to_string())
     
     # Demonstrate cache persistence
     print_banner("Step 5: Cache Persistence Test")

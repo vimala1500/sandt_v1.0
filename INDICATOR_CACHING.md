@@ -215,13 +215,27 @@ The system uses a simple "replace" strategy:
 ```python
 import os
 import shutil
+from pathlib import Path
 
-# Remove all cached indicators
-shutil.rmtree("./data/indicators")
+# Option 1: Remove entire directory (cross-platform)
+cache_dir = Path("./data/indicators")
+if cache_dir.exists():
+    shutil.rmtree(cache_dir)
 
-# Or remove specific files
-os.remove("./data/indicators/indicators.h5")
-os.remove("./data/indicators/config.json")
+# Option 2: Remove specific files (cross-platform)
+hdf5_file = Path("./data/indicators/indicators.h5")
+config_file = Path("./data/indicators/config.json")
+
+if hdf5_file.exists():
+    hdf5_file.unlink()
+if config_file.exists():
+    config_file.unlink()
+
+# Option 3: Unix/Linux/Mac command line
+# rm -rf data/indicators/
+
+# Option 4: Windows command line
+# rmdir /s /q data\indicators
 ```
 
 ## Technical Details
@@ -404,8 +418,15 @@ python compute_indicators.py
 **Cause**: System crash during write
 **Solution**:
 ```python
-# Remove and recompute
-rm data/indicators/indicators.h5
+# Remove and recompute (cross-platform)
+from pathlib import Path
+import shutil
+
+cache_dir = Path("./data/indicators")
+if cache_dir.exists():
+    shutil.rmtree(cache_dir)
+
+# Then recompute
 python compute_indicators.py
 ```
 

@@ -594,6 +594,7 @@ Both methods are equivalent - `compute_rsi()` now calls `compute_rsi_wilder()` i
 ### Performance Features
 - Numba JIT compilation for backtesting loops
 - Vectorized operations with NumPy/Pandas
+- **Indicator Caching**: Pre-computed indicators stored to HDF5 for 100x faster loading
 - Lazy loading and caching
 - Compressed storage formats
 
@@ -655,6 +656,15 @@ Contributions welcome! Please:
 ## Support
 
 For issues, questions, or feature requests, please open an issue on GitHub.
+
+## Documentation
+
+Additional documentation files:
+- **[INDICATOR_CACHING.md](INDICATOR_CACHING.md)** - Complete guide to indicator caching/storage system
+- **[QUICK_REFERENCE.md](QUICK_REFERENCE.md)** - Quick reference for all modules and methods
+- **[RSI_VERIFICATION.md](RSI_VERIFICATION.md)** - RSI calculation verification and TradingView comparison
+
+Run `python demo_caching.py` to see the caching system in action with live performance metrics.
 
 ## Acknowledgments
 

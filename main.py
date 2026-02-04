@@ -52,7 +52,7 @@ class Pipeline:
         self,
         symbols: Optional[List[str]] = None,
         sma_periods: List[int] = [20, 50, 200],
-        rsi_periods: List[int] = [14],
+        rsi_periods: List[int] = [7, 14, 21, 28],
         strategy_names: Optional[List[str]] = None
     ):
         """
@@ -136,7 +136,7 @@ class Pipeline:
         self,
         symbols: Optional[List[str]] = None,
         sma_periods: List[int] = [20, 50, 200],
-        rsi_periods: List[int] = [14]
+        rsi_periods: List[int] = [7, 14, 21, 28]
     ):
         """
         Run indicator computation only.

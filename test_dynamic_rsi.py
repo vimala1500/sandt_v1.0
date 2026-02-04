@@ -97,18 +97,21 @@ def test_dynamic_rsi_caching():
     
     # Step 5: Test ensure_rsi_period (should not recompute)
     print("\n5. Testing ensure_rsi_period (already exists)...")
-    success = engine.ensure_rsi_period(test_symbol, 21)
+    success, was_computed = engine.ensure_rsi_period(test_symbol, 21)
     assert success, "Should return True for existing period"
-    print("   ✓ ensure_rsi_period returns True for existing period")
+    assert not was_computed, "Should not recompute existing period"
+    print("   ✓ ensure_rsi_period returns (True, False) for existing period")
     
     # Step 6: Test ensure_rsi_period (needs computation)
     print("\n6. Testing ensure_rsi_period (needs computation)...")
-    success = engine.ensure_rsi_period(test_symbol, 30)
+    success, was_computed = engine.ensure_rsi_period(test_symbol, 30)
     assert success, "Should successfully compute RSI_30"
+    assert was_computed, "Should indicate computation occurred"
     
     data = engine.load_indicators(test_symbol)
     assert 'RSI_30' in data.columns, "RSI_30 should now exist"
     print(f"   ✓ RSI_30 computed on-demand: {data['RSI_30'].iloc[-1]:.2f}")
+    print("   ✓ ensure_rsi_period returns (True, True) for new period")
     
     # Step 7: Test with Scanner
     print("\n7. Testing Scanner with dynamic RSI periods...")
@@ -144,7 +147,7 @@ def test_dynamic_rsi_caching():
     # Step 9: Test with multiple symbols
     print("\n9. Testing with multiple symbols...")
     for symbol in test_symbols:
-        success = engine.ensure_rsi_period(symbol, 50)
+        success, was_computed = engine.ensure_rsi_period(symbol, 50)
         assert success, f"Should compute RSI_50 for {symbol}"
         
         data = engine.load_indicators(symbol)

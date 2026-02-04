@@ -341,9 +341,8 @@ class IndicatorEngine:
             # Update config to include this new period
             config = self.get_config()
             if symbol in config:
-                if period not in config[symbol]['rsi_periods']:
-                    config[symbol]['rsi_periods'].append(period)
-                    config[symbol]['rsi_periods'].sort()
+                config[symbol]['rsi_periods'].append(period)
+                config[symbol]['rsi_periods'].sort()
             else:
                 config[symbol] = {
                     'sma_periods': [],
@@ -359,7 +358,7 @@ class IndicatorEngine:
             print(f"Error computing RSI({period}) for {symbol}: {e}")
             return False
     
-    def ensure_rsi_period(self, symbol: str, period: int) -> bool:
+    def ensure_rsi_period(self, symbol: str, period: int) -> Tuple[bool, bool]:
         """
         Ensure that a specific RSI period is available for a symbol.
         
@@ -371,10 +370,12 @@ class IndicatorEngine:
             period: RSI period needed
             
         Returns:
-            True if the RSI period is available (was already cached or newly computed),
-            False if it cannot be made available
+            Tuple of (success, was_computed) where:
+            - success: True if the RSI period is available
+            - was_computed: True if the period was just computed (cache updated)
         """
         if self.has_rsi_period(symbol, period):
-            return True
+            return True, False
         
-        return self.compute_and_cache_rsi_period(symbol, period)
+        success = self.compute_and_cache_rsi_period(symbol, period)
+        return success, success

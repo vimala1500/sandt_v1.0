@@ -59,6 +59,15 @@ class Scanner:
                 if data is None or len(data) == 0:
                     continue
                 
+                # Ensure RSI period is available (compute on-demand if needed)
+                if not self.indicator_engine.ensure_rsi_period(symbol, rsi_period):
+                    continue
+                
+                # Reload data to get the newly computed RSI period if it was just added
+                data = self.indicator_engine.load_indicators(symbol)
+                if data is None:
+                    continue
+                
                 # Get latest RSI value
                 rsi_col = f"RSI_{rsi_period}"
                 if rsi_col not in data.columns:
@@ -115,6 +124,15 @@ class Scanner:
                 # Load indicators
                 data = self.indicator_engine.load_indicators(symbol)
                 if data is None or len(data) == 0:
+                    continue
+                
+                # Ensure RSI period is available (compute on-demand if needed)
+                if not self.indicator_engine.ensure_rsi_period(symbol, rsi_period):
+                    continue
+                
+                # Reload data to get the newly computed RSI period if it was just added
+                data = self.indicator_engine.load_indicators(symbol)
+                if data is None:
                     continue
                 
                 # Get latest RSI value

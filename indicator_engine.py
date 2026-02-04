@@ -285,3 +285,96 @@ class IndicatorEngine:
         
         with open(self.config_path, 'r') as f:
             return json.load(f)
+    
+    def has_rsi_period(self, symbol: str, period: int) -> bool:
+        """
+        Check if a specific RSI period is cached for a symbol.
+        
+        Args:
+            symbol: Stock symbol
+            period: RSI period to check
+            
+        Returns:
+            True if the RSI period is cached, False otherwise
+        """
+        data = self.load_indicators(symbol)
+        if data is None:
+            return False
+        
+        rsi_col = f"RSI_{period}"
+        return rsi_col in data.columns
+    
+    def compute_and_cache_rsi_period(self, symbol: str, period: int) -> bool:
+        """
+        Compute and cache a specific RSI period for a symbol.
+        
+        This method loads the existing cached data, computes the new RSI period,
+        and updates the cache. If the symbol doesn't have any cached data,
+        it will return False.
+        
+        Args:
+            symbol: Stock symbol
+            period: RSI period to compute
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        # Load existing cached data
+        data = self.load_indicators(symbol)
+        if data is None:
+            return False
+        
+        # Check if this RSI period already exists
+        rsi_col = f"RSI_{period}"
+        if rsi_col in data.columns:
+            # Already cached, nothing to do
+            return True
+        
+        # Compute the new RSI period
+        try:
+            data[rsi_col] = self.compute_rsi(data['Close'], period)
+            
+            # Store updated data back to HDF5
+            with pd.HDFStore(self.hdf5_path, mode='a', complevel=9, complib='zlib') as store:
+                store.put(f"/{symbol}", data, format='table')
+            
+            # Update config to include this new period
+            config = self.get_config()
+            if symbol in config:
+                if period not in config[symbol]['rsi_periods']:
+                    config[symbol]['rsi_periods'].append(period)
+                    config[symbol]['rsi_periods'].sort()
+            else:
+                config[symbol] = {
+                    'sma_periods': [],
+                    'rsi_periods': [period]
+                }
+            
+            with open(self.config_path, 'w') as f:
+                json.dump(config, f, indent=2)
+            
+            return True
+            
+        except Exception as e:
+            print(f"Error computing RSI({period}) for {symbol}: {e}")
+            return False
+    
+    def ensure_rsi_period(self, symbol: str, period: int) -> bool:
+        """
+        Ensure that a specific RSI period is available for a symbol.
+        
+        This method checks if the RSI period exists in the cache, and if not,
+        computes and caches it on-the-fly.
+        
+        Args:
+            symbol: Stock symbol
+            period: RSI period needed
+            
+        Returns:
+            True if the RSI period is available (was already cached or newly computed),
+            False if it cannot be made available
+        """
+        if self.has_rsi_period(symbol, period):
+            return True
+        
+        return self.compute_and_cache_rsi_period(symbol, period)

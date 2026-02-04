@@ -53,16 +53,25 @@ class IndicatorEngine:
         return prices.rolling(window=period, min_periods=period).mean()
     
     @staticmethod
-    def compute_rsi(prices: pd.Series, period: int = 14) -> pd.Series:
+    def compute_rsi_wilder(prices: pd.Series, period: int = 14) -> pd.Series:
         """
-        Compute Relative Strength Index (RSI).
+        Compute Relative Strength Index (RSI) using Wilder's smoothing method.
+        
+        This matches TradingView's RSI implementation exactly, using Wilder's
+        recursive averaging instead of exponential moving average (EWM).
+        
+        Formula:
+        - For the first 'period' rows: Use simple average of gains/losses
+        - For subsequent rows (n > period):
+            avg_gain[n] = (avg_gain[n-1] * (period-1) + gain[n]) / period
+            avg_loss[n] = (avg_loss[n-1] * (period-1) + loss[n]) / period
         
         Args:
             prices: Price series (typically Close prices)
             period: RSI period (default 14)
             
         Returns:
-            RSI series with values between 0-100
+            RSI series with values between 0-100, matching TradingView calculations
         """
         # Calculate price changes
         delta = prices.diff()
@@ -71,15 +80,50 @@ class IndicatorEngine:
         gains = delta.where(delta > 0, 0.0)
         losses = -delta.where(delta < 0, 0.0)
         
-        # Calculate average gains and losses using exponential moving average
-        avg_gains = gains.ewm(span=period, min_periods=period, adjust=False).mean()
-        avg_losses = losses.ewm(span=period, min_periods=period, adjust=False).mean()
+        # Initialize arrays for average gain and loss (all NaN initially)
+        avg_gains = pd.Series(index=prices.index, dtype=float)
+        avg_losses = pd.Series(index=prices.index, dtype=float)
+        
+        # Calculate the first average using simple mean for the first 'period' values
+        # Note: First value after diff is NaN, so we use values from index 1 to period
+        first_avg_gain = gains.iloc[1:period+1].mean()
+        first_avg_loss = losses.iloc[1:period+1].mean()
+        
+        avg_gains.iloc[period] = first_avg_gain
+        avg_losses.iloc[period] = first_avg_loss
+        
+        # Apply Wilder's smoothing for subsequent values
+        for i in range(period + 1, len(prices)):
+            avg_gains.iloc[i] = (avg_gains.iloc[i-1] * (period - 1) + gains.iloc[i]) / period
+            avg_losses.iloc[i] = (avg_losses.iloc[i-1] * (period - 1) + losses.iloc[i]) / period
         
         # Calculate RS and RSI
         rs = avg_gains / avg_losses
         rsi = 100 - (100 / (1 + rs))
         
+        # Handle special case: when avg_losses = 0, RS is infinite, RSI = 100
+        # But keep NaN where we don't have enough data
+        rsi = rsi.where(pd.notna(avg_gains) & pd.notna(avg_losses), np.nan)
+        rsi = rsi.where(avg_losses != 0, 100.0)
+        
         return rsi
+    
+    @staticmethod
+    def compute_rsi(prices: pd.Series, period: int = 14) -> pd.Series:
+        """
+        Compute Relative Strength Index (RSI) using Wilder's smoothing method.
+        
+        This is an alias for compute_rsi_wilder() to maintain backwards compatibility.
+        See compute_rsi_wilder() for detailed documentation.
+        
+        Args:
+            prices: Price series (typically Close prices)
+            period: RSI period (default 14)
+            
+        Returns:
+            RSI series with values between 0-100
+        """
+        return IndicatorEngine.compute_rsi_wilder(prices, period)
     
     def compute_indicators(
         self,

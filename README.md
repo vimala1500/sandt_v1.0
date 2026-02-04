@@ -480,6 +480,90 @@ def my_strategy(data: pd.DataFrame, **params) -> pd.Series:
     return signals
 ```
 
+## Technical Indicators
+
+### RSI Implementation - Wilder's Smoothing Method
+
+This system uses **Wilder's recursive averaging** for RSI calculation, which matches TradingView's classic RSI implementation exactly.
+
+#### Formula
+
+The RSI calculation uses the following approach:
+
+1. **Calculate price changes**: `delta = close[i] - close[i-1]`
+2. **Separate gains and losses**:
+   - `gain = delta if delta > 0 else 0`
+   - `loss = -delta if delta < 0 else 0`
+3. **First average** (for period n): Simple average of first n gains/losses
+4. **Subsequent averages** (Wilder's smoothing):
+   ```
+   avg_gain[i] = (avg_gain[i-1] * (period-1) + gain[i]) / period
+   avg_loss[i] = (avg_loss[i-1] * (period-1) + loss[i]) / period
+   ```
+5. **Calculate RS and RSI**:
+   ```
+   RS = avg_gain / avg_loss
+   RSI = 100 - (100 / (1 + RS))
+   ```
+
+#### Why Wilder's Method?
+
+**Wilder's recursive averaging** is the **original and correct** method described by J. Welles Wilder Jr. in his 1978 book "New Concepts in Technical Trading Systems". This matches:
+- ✅ TradingView's RSI indicator
+- ✅ Most professional trading platforms
+- ✅ The original definition by Welles Wilder
+
+**Previous Implementation (EWM)**: Earlier versions used pandas' `ewm()` (exponential weighted moving average), which is **different** from Wilder's method and produces different values.
+
+#### Verifying Against TradingView
+
+To verify RSI values match TradingView:
+
+1. **Export your price data**:
+   ```python
+   from data_loader import DataLoader
+   loader = DataLoader('./data/prices')
+   data = loader.load_symbol('AAPL')
+   print(data['Close'].tail(20))  # Last 20 close prices
+   ```
+
+2. **In TradingView**:
+   - Create a new chart
+   - Input the same price data
+   - Add "Relative Strength Index" indicator
+   - Set period to 14 (or your chosen period)
+
+3. **Compare values**: The RSI values should match exactly (within rounding precision)
+
+#### Testing RSI Implementation
+
+Run the validation test:
+```bash
+python test_rsi_wilder.py
+```
+
+This test:
+- Validates RSI calculation with known data
+- Compares Wilder's method vs old EWM method
+- Tests edge cases (all gains, all losses, flat prices)
+- Shows how to reproduce TradingView values
+
+#### Using RSI in Code
+
+RSI is computed automatically when you run `compute_indicators.py`. To use it programmatically:
+
+```python
+from indicator_engine import IndicatorEngine
+
+# Compute RSI for a price series
+rsi = IndicatorEngine.compute_rsi_wilder(prices, period=14)
+
+# Or use the alias (same result)
+rsi = IndicatorEngine.compute_rsi(prices, period=14)
+```
+
+Both methods are equivalent - `compute_rsi()` now calls `compute_rsi_wilder()` internally.
+
 ## Architecture & Design
 
 ### Modular Components

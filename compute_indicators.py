@@ -121,8 +121,8 @@ Notes:
         '--rsi-periods',
         type=int,
         nargs='+',
-        default=[14],
-        help='RSI periods to compute (default: 14)'
+        default=[7, 14, 21, 28],
+        help='RSI periods to compute (default: 7 14 21 28)'
     )
     
     parser.add_argument(

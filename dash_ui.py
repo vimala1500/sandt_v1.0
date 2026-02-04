@@ -372,10 +372,11 @@ class DashUI:
                     ]), html.Span("❌ Failed", className="badge bg-danger")
                 
                 # Compute indicators
+                # Compute multiple RSI periods to support user selection in UI
                 self.indicator_engine.process_multiple_symbols(
                     data_dict,
                     sma_periods=[20, 50, 200],
-                    rsi_periods=[14],
+                    rsi_periods=[7, 14, 21, 28],
                     show_progress=False  # Disable progress bar in UI
                 )
                 

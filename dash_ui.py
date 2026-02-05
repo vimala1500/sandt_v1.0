@@ -117,43 +117,128 @@ class DashUI:
                                     {'label': 'RSI Overbought', 'value': 'rsi_overbought'},
                                     {'label': 'MA Crossover (Bullish)', 'value': 'ma_cross_bull'},
                                     {'label': 'MA Crossover (Bearish)', 'value': 'ma_cross_bear'},
+                                    {'label': 'Candlestick Patterns', 'value': 'candlestick'},
+                                    {'label': 'Momentum Streaks', 'value': 'momentum_streak'},
+                                    {'label': 'Custom Indicator Filter', 'value': 'custom_indicator'},
                                     {'label': 'Top Performers', 'value': 'top_performers'}
                                 ],
                                 value='rsi_oversold',
                                 className="mb-3"
                             ),
                             
-                            dbc.Label("RSI Period:"),
-                            dcc.Input(
-                                id='rsi-period',
-                                type='number',
-                                value=14,
-                                className="form-control mb-3"
-                            ),
+                            # RSI controls
+                            html.Div(id='rsi-controls', children=[
+                                dbc.Label("RSI Period:"),
+                                dcc.Input(
+                                    id='rsi-period',
+                                    type='number',
+                                    value=14,
+                                    className="form-control mb-3"
+                                ),
+                                dbc.Label("RSI Threshold:"),
+                                dcc.Input(
+                                    id='rsi-threshold',
+                                    type='number',
+                                    value=30,
+                                    className="form-control mb-3"
+                                )
+                            ]),
                             
-                            dbc.Label("RSI Threshold:"),
-                            dcc.Input(
-                                id='rsi-threshold',
-                                type='number',
-                                value=30,
-                                className="form-control mb-3"
-                            ),
+                            # MA controls
+                            html.Div(id='ma-controls', children=[
+                                dbc.Label("Fast MA Period:"),
+                                dcc.Input(
+                                    id='fast-ma',
+                                    type='number',
+                                    value=20,
+                                    className="form-control mb-3"
+                                ),
+                                dbc.Label("Slow MA Period:"),
+                                dcc.Input(
+                                    id='slow-ma',
+                                    type='number',
+                                    value=50,
+                                    className="form-control mb-3"
+                                )
+                            ]),
                             
-                            dbc.Label("Fast MA Period:"),
-                            dcc.Input(
-                                id='fast-ma',
-                                type='number',
-                                value=20,
-                                className="form-control mb-3"
-                            ),
+                            # Candlestick pattern controls
+                            html.Div(id='candlestick-controls', children=[
+                                dbc.Label("Pattern Type:"),
+                                dcc.Dropdown(
+                                    id='pattern-type',
+                                    options=[
+                                        {'label': 'Bullish Engulfing', 'value': 'engulfing_bull'},
+                                        {'label': 'Bearish Engulfing', 'value': 'engulfing_bear'},
+                                        {'label': 'Hammer', 'value': 'hammer'},
+                                        {'label': 'Shooting Star', 'value': 'shooting_star'},
+                                        {'label': 'Doji', 'value': 'doji'},
+                                        {'label': 'Hanging Man', 'value': 'hanging_man'},
+                                        {'label': 'Bullish Harami', 'value': 'harami_bull'},
+                                        {'label': 'Bearish Harami', 'value': 'harami_bear'},
+                                        {'label': 'Dark Cloud Cover', 'value': 'dark_cloud'},
+                                        {'label': 'Piercing Pattern', 'value': 'piercing'},
+                                        {'label': 'Three White Soldiers', 'value': 'three_white_soldiers'},
+                                        {'label': 'Three Black Crows', 'value': 'three_black_crows'}
+                                    ],
+                                    value='engulfing_bull',
+                                    className="mb-3"
+                                )
+                            ], style={'display': 'none'}),
                             
-                            dbc.Label("Slow MA Period:"),
-                            dcc.Input(
-                                id='slow-ma',
-                                type='number',
-                                value=50,
-                                className="form-control mb-3"
-                            ),
+                            # Momentum streak controls
+                            html.Div(id='streak-controls', children=[
+                                dbc.Label("Streak Type:"),
+                                dcc.Dropdown(
+                                    id='streak-type',
+                                    options=[
+                                        {'label': 'Consecutive Higher Highs', 'value': 'consec_higher_high'},
+                                        {'label': 'Consecutive Lower Lows', 'value': 'consec_lower_low'}
+                                    ],
+                                    value='consec_higher_high',
+                                    className="mb-2"
+                                ),
+                                dbc.Label("Minimum Streak Days:"),
+                                dcc.Input(
+                                    id='streak-threshold',
+                                    type='number',
+                                    value=3,
+                                    min=1,
+                                    className="form-control mb-3"
+                                )
+                            ], style={'display': 'none'}),
+                            
+                            # Custom indicator controls
+                            html.Div(id='custom-indicator-controls', children=[
+                                dbc.Label("Select Indicator:"),
+                                dcc.Dropdown(
+                                    id='custom-indicator',
+                                    options=[],  # Will be populated dynamically
+                                    value=None,
+                                    className="mb-2"
+                                ),
+                                dbc.Label("Operator:"),
+                                dcc.Dropdown(
+                                    id='custom-operator',
+                                    options=[
+                                        {'label': 'Greater than (>)', 'value': '>'},
+                                        {'label': 'Less than (<)', 'value': '<'},
+                                        {'label': 'Greater or equal (>=)', 'value': '>='},
+                                        {'label': 'Less or equal (<=)', 'value': '<='},
+                                        {'label': 'Equal (==)', 'value': '=='},
+                                        {'label': 'Not equal (!=)', 'value': '!='}
+                                    ],
+                                    value='>',
+                                    className="mb-2"
+                                ),
+                                dbc.Label("Threshold Value:"),
+                                dcc.Input(
+                                    id='custom-threshold',
+                                    type='number',
+                                    value=0,
+                                    className="form-control mb-3"
+                                )
+                            ], style={'display': 'none'}),
                             
                             dbc.Button(
                                 "Run Scan",
@@ -192,6 +277,85 @@ class DashUI:
         """Setup Dash callbacks."""
         
         @self.app.callback(
+            [Output('rsi-controls', 'style'),
+             Output('ma-controls', 'style'),
+             Output('candlestick-controls', 'style'),
+             Output('streak-controls', 'style'),
+             Output('custom-indicator-controls', 'style')],
+            Input('scan-type', 'value')
+        )
+        def toggle_controls(scan_type):
+            """Show/hide controls based on scan type."""
+            show = {'display': 'block'}
+            hide = {'display': 'none'}
+            
+            # Default: hide all
+            rsi_style = hide
+            ma_style = hide
+            candlestick_style = hide
+            streak_style = hide
+            custom_style = hide
+            
+            # Show relevant controls
+            if scan_type in ['rsi_oversold', 'rsi_overbought']:
+                rsi_style = show
+            elif scan_type in ['ma_cross_bull', 'ma_cross_bear']:
+                ma_style = show
+            elif scan_type == 'candlestick':
+                candlestick_style = show
+            elif scan_type == 'momentum_streak':
+                streak_style = show
+            elif scan_type == 'custom_indicator':
+                custom_style = show
+            
+            return rsi_style, ma_style, candlestick_style, streak_style, custom_style
+        
+        @self.app.callback(
+            Output('custom-indicator', 'options'),
+            Input('refresh-symbols-btn', 'n_clicks')
+        )
+        def populate_indicator_dropdown(n_clicks):
+            """Populate the indicator dropdown with available indicators."""
+            try:
+                available_indicators = self.scanner.get_available_indicators()
+                if not available_indicators:
+                    return []
+                
+                # Create options with friendly labels
+                options = []
+                for indicator in available_indicators:
+                    # Create a friendly label
+                    label = indicator
+                    if indicator.startswith('RSI_'):
+                        label = f"RSI ({indicator.split('_')[1]} period)"
+                    elif indicator.startswith('SMA_'):
+                        label = f"SMA ({indicator.split('_')[1]} period)"
+                    elif indicator.startswith('EMA_'):
+                        label = f"EMA ({indicator.split('_')[1]} period)"
+                    elif indicator == 'consec_higher_high':
+                        label = "Consecutive Higher Highs"
+                    elif indicator == 'consec_lower_low':
+                        label = "Consecutive Lower Lows"
+                    elif indicator == 'days_since_prev_high':
+                        label = "Days Since Previous High"
+                    elif indicator == 'days_since_prev_low':
+                        label = "Days Since Previous Low"
+                    elif indicator == 'engulfing_bull':
+                        label = "Bullish Engulfing Pattern"
+                    elif indicator == 'engulfing_bear':
+                        label = "Bearish Engulfing Pattern"
+                    elif '_' in indicator:
+                        # Convert snake_case to Title Case
+                        label = indicator.replace('_', ' ').title()
+                    
+                    options.append({'label': label, 'value': indicator})
+                
+                return options
+            except Exception as e:
+                print(f"Error populating indicators: {e}")
+                return []
+        
+        @self.app.callback(
             [Output('scan-results-div', 'children'),
              Output('scan-status', 'children')],
             Input('run-scan-btn', 'n_clicks'),
@@ -199,9 +363,17 @@ class DashUI:
              State('rsi-period', 'value'),
              State('rsi-threshold', 'value'),
              State('fast-ma', 'value'),
-             State('slow-ma', 'value')]
+             State('slow-ma', 'value'),
+             State('pattern-type', 'value'),
+             State('streak-type', 'value'),
+             State('streak-threshold', 'value'),
+             State('custom-indicator', 'value'),
+             State('custom-operator', 'value'),
+             State('custom-threshold', 'value')]
         )
-        def run_scan(n_clicks, scan_type, rsi_period, rsi_threshold, fast_ma, slow_ma):
+        def run_scan(n_clicks, scan_type, rsi_period, rsi_threshold, fast_ma, slow_ma,
+                     pattern_type, streak_type, streak_threshold, 
+                     custom_indicator, custom_operator, custom_threshold):
             """Run the selected scan."""
             if n_clicks is None:
                 return html.P("Configure scan and click 'Run Scan'"), ""
@@ -229,6 +401,28 @@ class DashUI:
                 elif scan_type == 'ma_cross_bear':
                     results = self.scanner.scan_ma_crossover(symbols, fast_ma, slow_ma, 'bearish')
                     status = f"Found {len(results)} bearish MA crossovers"
+                
+                elif scan_type == 'candlestick':
+                    # Scan for candlestick pattern (pattern value == 1 indicates pattern detected)
+                    PATTERN_PRESENT = 1
+                    results = self.scanner.scan_by_indicator(symbols, pattern_type, '==', PATTERN_PRESENT)
+                    pattern_name = pattern_type.replace('_', ' ').title()
+                    status = f"Found {len(results)} stocks with {pattern_name} pattern"
+                
+                elif scan_type == 'momentum_streak':
+                    # Scan for momentum streaks
+                    results = self.scanner.scan_by_indicator(symbols, streak_type, '>=', float(streak_threshold))
+                    streak_name = streak_type.replace('_', ' ').title()
+                    status = f"Found {len(results)} stocks with {streak_name} >= {streak_threshold} days"
+                
+                elif scan_type == 'custom_indicator':
+                    # Scan with custom indicator filter
+                    if custom_indicator is None:
+                        return html.P("Please select an indicator"), ""
+                    results = self.scanner.scan_by_indicator(
+                        symbols, custom_indicator, custom_operator, float(custom_threshold)
+                    )
+                    status = f"Found {len(results)} stocks where {custom_indicator} {custom_operator} {custom_threshold}"
                 
                 elif scan_type == 'top_performers':
                     results = self.scanner.get_top_performers('rsi_meanrev', metric='sharpe_ratio', top_n=20)

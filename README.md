@@ -26,8 +26,18 @@ A complete, modular stock analysis and backtesting system with web UI. Features 
 
 ### Core Capabilities
 - **Parquet OHLCV Processing**: Symbol-wise stock price data loading from local filesystem
-- **Technical Indicators**: SMA and RSI computation with configurable periods (stored in HDF5/JSON)
+- **Technical Indicators**: Comprehensive technical analysis library with 230+ indicators (stored in HDF5/JSON)
+  - **EMAs**: 215 periods (2-200, then 250-1000 by 50s)
+  - **Candlestick Patterns**: 12 patterns (hammer, doji, engulfing, harami, etc.)
+  - **Momentum Indicators**: Consecutive higher/lower streaks
+  - **High/Low Tracking**: Days since previous high/low
+  - **Traditional Indicators**: SMA and RSI with configurable periods
 - **🆕 Dynamic RSI Period Caching**: Scan with ANY RSI period - automatically computed and cached on-demand (See [DYNAMIC_RSI_CACHING.md](DYNAMIC_RSI_CACHING.md))
+- **🆕 Universal Indicator Scanner**: Filter stocks by ANY indicator with flexible operators (>, <, ==, etc.)
+  - Candlestick pattern scanning
+  - Momentum streak detection
+  - Custom EMA/SMA combinations
+  - Days since high/low breakouts
 - **Multiple Strategies**: 
   - Moving Average Crossover (arbitrary fast/slow pairs)
   - RSI Mean-Reversion (arbitrary periods/thresholds)
@@ -35,7 +45,10 @@ A complete, modular stock analysis and backtesting system with web UI. Features 
   - Win rate, CAGR, Sharpe ratio, max drawdown, expectancy, trade count
   - Results stored as Zarr chunked arrays for efficiency
 - **Live Scanner**: Find stocks matching conditions (e.g., RSI < 20) with backtest cross-reference
-- **Interactive Dash UI**: Web-based interface for scanning and results visualization
+- **Interactive Dash UI**: Web-based interface with dynamic indicator selection
+  - 8 scan types including candlestick patterns, momentum streaks, and custom filters
+  - Dynamic indicator dropdown populated from available data
+  - Flexible comparison operators for custom filtering
 - **Flexible Deployment**: Run locally, on Google Colab, or deploy as a web service
 
 ### Performance Metrics
@@ -431,6 +444,83 @@ top = scanner.get_top_performers(
     top_n=20
 )
 ```
+
+### Using the Scanner with New Indicators
+
+The scanner now supports filtering by ANY indicator with flexible comparison operators:
+
+```python
+from indicator_engine import IndicatorEngine
+from scanner import Scanner
+from backtest_engine import BacktestEngine
+
+# Initialize engines
+engine = IndicatorEngine('./data/indicators')
+backtest_engine = BacktestEngine('./data/backtests')
+scanner = Scanner(engine, backtest_engine)
+
+# Get list of available symbols
+symbols = engine.list_available_symbols()
+
+# Example 1: Find stocks with specific candlestick patterns
+hammer_stocks = scanner.scan_by_indicator(
+    symbols, 
+    indicator='hammer',
+    operator='==',
+    threshold=1
+)
+
+# Example 2: Find stocks with strong momentum (5+ consecutive higher highs)
+momentum_stocks = scanner.scan_by_indicator(
+    symbols,
+    indicator='consec_higher_high',
+    operator='>=',
+    threshold=5
+)
+
+# Example 3: Find stocks at new highs (days_since_prev_high > 0 means setting a new high)
+# Note: days_since_prev_high is non-zero only on days that set a new record high
+breakout_stocks = scanner.scan_by_indicator(
+    symbols,
+    indicator='days_since_prev_high',
+    operator='>',
+    threshold=0
+)
+
+# Example 4: Find stocks with EMA crossover signals
+ema_cross_stocks = scanner.scan_by_indicator(
+    symbols,
+    indicator='EMA_50',
+    operator='>',
+    threshold=100
+)
+
+# Example 5: Get all available indicators dynamically
+available_indicators = scanner.get_available_indicators()
+print(f"Available indicators: {available_indicators}")
+```
+
+### Web UI Scanner Features
+
+The Dash UI now includes 8 scan types:
+
+1. **RSI Oversold/Overbought**: Traditional RSI scanning with any period
+2. **MA Crossover (Bullish/Bearish)**: Moving average crossover detection
+3. **Candlestick Patterns** ⭐ NEW: Scan for 12 candlestick patterns
+   - Hammer, Doji, Engulfing (Bull/Bear), Shooting Star, etc.
+4. **Momentum Streaks** ⭐ NEW: Find stocks with consecutive higher/lower movements
+5. **Custom Indicator Filter** ⭐ NEW: Filter by ANY indicator with custom operators
+   - Supports all 230+ indicators
+   - Flexible operators: >, <, >=, <=, ==, !=
+   - Dynamic indicator dropdown
+6. **Top Performers**: Ranked by backtest metrics
+
+To use:
+1. Start the UI: `python app.py`
+2. Click "Compute Indicators" to process your price data
+3. Select scan type from dropdown
+4. Configure parameters (automatically shown based on scan type)
+5. Click "Run Scan" to see results
 
 ### Launching Dash UI
 

@@ -159,8 +159,8 @@ class IndicatorEngine:
         high_prices = df['High'].copy()
         result = pd.Series(0, index=df.index, dtype=int)
         
-        # Use expanding window for initial period, then rolling for 5 years
-        lookback_days = lookback_years * 252  # Approximate trading days in 5 years
+        # Use expanding window for initial period, then rolling for lookback period
+        lookback_days = lookback_years * 252  # Approximate trading days per year
         
         for i in range(1, len(high_prices)):
             # Determine lookback window
@@ -203,8 +203,8 @@ class IndicatorEngine:
         low_prices = df['Low'].copy()
         result = pd.Series(0, index=df.index, dtype=int)
         
-        # Use expanding window for initial period, then rolling for 5 years
-        lookback_days = lookback_years * 252  # Approximate trading days in 5 years
+        # Use expanding window for initial period, then rolling for lookback period
+        lookback_days = lookback_years * 252  # Approximate trading days per year
         
         for i in range(1, len(low_prices)):
             # Determine lookback window

@@ -403,8 +403,9 @@ class DashUI:
                     status = f"Found {len(results)} bearish MA crossovers"
                 
                 elif scan_type == 'candlestick':
-                    # Scan for candlestick pattern (pattern value == 1)
-                    results = self.scanner.scan_by_indicator(symbols, pattern_type, '==', 1)
+                    # Scan for candlestick pattern (pattern value == 1 indicates pattern detected)
+                    PATTERN_PRESENT = 1
+                    results = self.scanner.scan_by_indicator(symbols, pattern_type, '==', PATTERN_PRESENT)
                     pattern_name = pattern_type.replace('_', ' ').title()
                     status = f"Found {len(results)} stocks with {pattern_name} pattern"
                 

@@ -478,7 +478,8 @@ momentum_stocks = scanner.scan_by_indicator(
     threshold=5
 )
 
-# Example 3: Find stocks breaking out to new highs
+# Example 3: Find stocks at new highs (days_since_prev_high > 0 means setting a new high)
+# Note: days_since_prev_high is non-zero only on days that set a new record high
 breakout_stocks = scanner.scan_by_indicator(
     symbols,
     indicator='days_since_prev_high',

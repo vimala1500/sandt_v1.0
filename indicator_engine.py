@@ -1,7 +1,7 @@
 """
 Indicator Engine Module
 ========================
-Computes technical indicators (SMA, RSI) and stores them to HDF5/JSON.
+Computes technical indicators (SMA, RSI, EMA, candlestick patterns, etc.) and stores them to HDF5/JSON.
 Configurable periods and parameters with efficient computation.
 """
 
@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 import tables as tb
 from tqdm import tqdm
+from candlestick_patterns import compute_all_patterns
 
 
 class IndicatorEngine:
@@ -125,11 +126,171 @@ class IndicatorEngine:
         """
         return IndicatorEngine.compute_rsi_wilder(prices, period)
     
+    @staticmethod
+    def compute_ema(prices: pd.Series, period: int) -> pd.Series:
+        """
+        Compute Exponential Moving Average.
+        
+        Args:
+            prices: Price series (typically Close prices)
+            period: EMA period
+            
+        Returns:
+            EMA series with same index as input
+        """
+        return prices.ewm(span=period, adjust=False, min_periods=period).mean()
+    
+    @staticmethod
+    def compute_days_since_prev_high(df: pd.DataFrame, lookback_years: int = 5) -> pd.Series:
+        """
+        Compute days since previous all-time high.
+        
+        For each date, if the High is a new all-time high (over lookback period),
+        mark with the number of trading days since the previous record high.
+        Fill with 0 otherwise.
+        
+        Args:
+            df: DataFrame with OHLC data
+            lookback_years: Number of years to look back (default 5)
+            
+        Returns:
+            Series with days since previous high
+        """
+        high_prices = df['High'].copy()
+        result = pd.Series(0, index=df.index, dtype=int)
+        
+        # Use expanding window for initial period, then rolling for 5 years
+        lookback_days = lookback_years * 252  # Approximate trading days in 5 years
+        
+        for i in range(1, len(high_prices)):
+            # Determine lookback window
+            start_idx = max(0, i - lookback_days)
+            window = high_prices.iloc[start_idx:i]
+            
+            if len(window) == 0:
+                continue
+            
+            current_high = high_prices.iloc[i]
+            prev_max = window.max()
+            
+            # Check if current is new all-time high in the window
+            if current_high > prev_max:
+                # Find the index of the previous high
+                prev_high_indices = window[window == prev_max].index
+                if len(prev_high_indices) > 0:
+                    prev_high_idx = df.index.get_loc(prev_high_indices[-1])
+                    days_since = i - prev_high_idx
+                    result.iloc[i] = days_since
+        
+        return result
+    
+    @staticmethod
+    def compute_days_since_prev_low(df: pd.DataFrame, lookback_years: int = 5) -> pd.Series:
+        """
+        Compute days since previous all-time low.
+        
+        For each date, if the Low is a new all-time low (over lookback period),
+        mark with the number of trading days since the previous record low.
+        Fill with 0 otherwise.
+        
+        Args:
+            df: DataFrame with OHLC data
+            lookback_years: Number of years to look back (default 5)
+            
+        Returns:
+            Series with days since previous low
+        """
+        low_prices = df['Low'].copy()
+        result = pd.Series(0, index=df.index, dtype=int)
+        
+        # Use expanding window for initial period, then rolling for 5 years
+        lookback_days = lookback_years * 252  # Approximate trading days in 5 years
+        
+        for i in range(1, len(low_prices)):
+            # Determine lookback window
+            start_idx = max(0, i - lookback_days)
+            window = low_prices.iloc[start_idx:i]
+            
+            if len(window) == 0:
+                continue
+            
+            current_low = low_prices.iloc[i]
+            prev_min = window.min()
+            
+            # Check if current is new all-time low in the window
+            if current_low < prev_min:
+                # Find the index of the previous low
+                prev_low_indices = window[window == prev_min].index
+                if len(prev_low_indices) > 0:
+                    prev_low_idx = df.index.get_loc(prev_low_indices[-1])
+                    days_since = i - prev_low_idx
+                    result.iloc[i] = days_since
+        
+        return result
+    
+    @staticmethod
+    def compute_consec_higher_high(df: pd.DataFrame) -> pd.Series:
+        """
+        Compute streak of consecutive days with strictly higher highs.
+        
+        For each row, count the number of consecutive days where High is
+        strictly higher than the previous day's High.
+        
+        Args:
+            df: DataFrame with High column
+            
+        Returns:
+            Series with consecutive higher high count
+        """
+        high_prices = df['High']
+        result = pd.Series(0, index=df.index, dtype=int)
+        
+        streak = 0
+        for i in range(1, len(high_prices)):
+            if high_prices.iloc[i] > high_prices.iloc[i-1]:
+                streak += 1
+            else:
+                streak = 0
+            result.iloc[i] = streak
+        
+        return result
+    
+    @staticmethod
+    def compute_consec_lower_low(df: pd.DataFrame) -> pd.Series:
+        """
+        Compute streak of consecutive days with strictly lower lows.
+        
+        For each row, count the number of consecutive days where Low is
+        strictly lower than the previous day's Low.
+        
+        Args:
+            df: DataFrame with Low column
+            
+        Returns:
+            Series with consecutive lower low count
+        """
+        low_prices = df['Low']
+        result = pd.Series(0, index=df.index, dtype=int)
+        
+        streak = 0
+        for i in range(1, len(low_prices)):
+            if low_prices.iloc[i] < low_prices.iloc[i-1]:
+                streak += 1
+            else:
+                streak = 0
+            result.iloc[i] = streak
+        
+        return result
+    
     def compute_indicators(
         self,
         data: pd.DataFrame,
         sma_periods: List[int] = [20, 50, 200],
-        rsi_periods: List[int] = [14]
+        rsi_periods: List[int] = [14],
+        ema_periods: Optional[List[int]] = None,
+        include_candlestick_patterns: bool = True,
+        include_streak_indicators: bool = True,
+        include_high_low_days: bool = True
     ) -> pd.DataFrame:
         """
         Compute all configured indicators for a given dataset.
@@ -138,6 +299,10 @@ class IndicatorEngine:
             data: OHLCV DataFrame with DatetimeIndex
             sma_periods: List of SMA periods to compute
             rsi_periods: List of RSI periods to compute
+            ema_periods: List of EMA periods to compute (default: 2-200, then 250-1000 by 50s)
+            include_candlestick_patterns: Whether to compute candlestick patterns
+            include_streak_indicators: Whether to compute consecutive higher/lower streaks
+            include_high_low_days: Whether to compute days since prev high/low
             
         Returns:
             DataFrame with original data + computed indicators
@@ -154,6 +319,32 @@ class IndicatorEngine:
             col_name = f"RSI_{period}"
             result[col_name] = self.compute_rsi(data['Close'], period)
         
+        # Compute EMAs (2-200, then 250, 300, ..., 1000)
+        if ema_periods is None:
+            ema_periods = list(range(2, 201)) + list(range(250, 1001, 50))
+        
+        for period in ema_periods:
+            col_name = f"EMA_{period}"
+            result[col_name] = self.compute_ema(data['Close'], period)
+        
+        # Compute candlestick patterns
+        if include_candlestick_patterns:
+            patterns = compute_all_patterns(data)
+            for pattern_name, pattern_series in patterns.items():
+                result[pattern_name] = pattern_series
+        
+        # Compute streak indicators
+        if include_streak_indicators:
+            result['consec_higher_high'] = self.compute_consec_higher_high(data)
+            result['consec_lower_low'] = self.compute_consec_lower_low(data)
+        
+        # Compute days since prev high/low
+        if include_high_low_days:
+            result['days_since_prev_high'] = self.compute_days_since_prev_high(data)
+            result['days_since_prev_low'] = self.compute_days_since_prev_low(data)
+        
+        return result
+        
         return result
     
     def process_and_store(
@@ -161,7 +352,11 @@ class IndicatorEngine:
         symbol: str,
         data: pd.DataFrame,
         sma_periods: List[int] = [20, 50, 200],
-        rsi_periods: List[int] = [14]
+        rsi_periods: List[int] = [14],
+        ema_periods: Optional[List[int]] = None,
+        include_candlestick_patterns: bool = True,
+        include_streak_indicators: bool = True,
+        include_high_low_days: bool = True
     ):
         """
         Compute indicators and store to HDF5.
@@ -171,22 +366,46 @@ class IndicatorEngine:
             data: OHLCV DataFrame
             sma_periods: SMA periods to compute
             rsi_periods: RSI periods to compute
+            ema_periods: EMA periods to compute
+            include_candlestick_patterns: Whether to compute candlestick patterns
+            include_streak_indicators: Whether to compute consecutive higher/lower streaks
+            include_high_low_days: Whether to compute days since prev high/low
         """
         # Compute indicators
-        indicators_df = self.compute_indicators(data, sma_periods, rsi_periods)
+        indicators_df = self.compute_indicators(
+            data, 
+            sma_periods, 
+            rsi_periods,
+            ema_periods,
+            include_candlestick_patterns,
+            include_streak_indicators,
+            include_high_low_days
+        )
         
         # Store to HDF5
         with pd.HDFStore(self.hdf5_path, mode='a', complevel=9, complib='zlib') as store:
             store.put(f"/{symbol}", indicators_df, format='table')
         
         # Update config
-        self._update_config(symbol, sma_periods, rsi_periods)
+        self._update_config(
+            symbol, 
+            sma_periods, 
+            rsi_periods, 
+            ema_periods,
+            include_candlestick_patterns,
+            include_streak_indicators,
+            include_high_low_days
+        )
     
     def process_multiple_symbols(
         self,
         data_dict: Dict[str, pd.DataFrame],
         sma_periods: List[int] = [20, 50, 200],
         rsi_periods: List[int] = [14],
+        ema_periods: Optional[List[int]] = None,
+        include_candlestick_patterns: bool = True,
+        include_streak_indicators: bool = True,
+        include_high_low_days: bool = True,
         show_progress: bool = True
     ):
         """
@@ -196,6 +415,10 @@ class IndicatorEngine:
             data_dict: Dictionary mapping symbol to OHLCV DataFrame
             sma_periods: SMA periods to compute
             rsi_periods: RSI periods to compute
+            ema_periods: EMA periods to compute
+            include_candlestick_patterns: Whether to compute candlestick patterns
+            include_streak_indicators: Whether to compute consecutive higher/lower streaks
+            include_high_low_days: Whether to compute days since prev high/low
             show_progress: Whether to show progress bar
         """
         symbols = list(data_dict.keys())
@@ -207,7 +430,11 @@ class IndicatorEngine:
                     symbol, 
                     data_dict[symbol], 
                     sma_periods, 
-                    rsi_periods
+                    rsi_periods,
+                    ema_periods,
+                    include_candlestick_patterns,
+                    include_streak_indicators,
+                    include_high_low_days
                 )
             except Exception as e:
                 print(f"Error processing {symbol}: {e}")
@@ -251,7 +478,16 @@ class IndicatorEngine:
             print(f"Error listing symbols: {e}")
             return []
     
-    def _update_config(self, symbol: str, sma_periods: List[int], rsi_periods: List[int]):
+    def _update_config(
+        self, 
+        symbol: str, 
+        sma_periods: List[int], 
+        rsi_periods: List[int],
+        ema_periods: Optional[List[int]] = None,
+        include_candlestick_patterns: bool = True,
+        include_streak_indicators: bool = True,
+        include_high_low_days: bool = True
+    ):
         """
         Update configuration JSON with indicator parameters.
         
@@ -259,15 +495,26 @@ class IndicatorEngine:
             symbol: Stock symbol
             sma_periods: SMA periods used
             rsi_periods: RSI periods used
+            ema_periods: EMA periods used
+            include_candlestick_patterns: Whether candlestick patterns were computed
+            include_streak_indicators: Whether streak indicators were computed
+            include_high_low_days: Whether days since prev high/low were computed
         """
         config = {}
         if self.config_path.exists():
             with open(self.config_path, 'r') as f:
                 config = json.load(f)
         
+        if ema_periods is None:
+            ema_periods = list(range(2, 201)) + list(range(250, 1001, 50))
+        
         config[symbol] = {
             'sma_periods': sma_periods,
-            'rsi_periods': rsi_periods
+            'rsi_periods': rsi_periods,
+            'ema_periods': ema_periods,
+            'candlestick_patterns': include_candlestick_patterns,
+            'streak_indicators': include_streak_indicators,
+            'high_low_days': include_high_low_days
         }
         
         with open(self.config_path, 'w') as f:

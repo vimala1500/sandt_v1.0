@@ -126,6 +126,31 @@ Notes:
     )
     
     parser.add_argument(
+        '--ema-periods',
+        type=int,
+        nargs='+',
+        help='EMA periods to compute (default: 2-200, then 250-1000 by 50s)'
+    )
+    
+    parser.add_argument(
+        '--no-candlestick-patterns',
+        action='store_true',
+        help='Skip candlestick pattern detection'
+    )
+    
+    parser.add_argument(
+        '--no-streak-indicators',
+        action='store_true',
+        help='Skip consecutive higher/lower streak indicators'
+    )
+    
+    parser.add_argument(
+        '--no-high-low-days',
+        action='store_true',
+        help='Skip days since prev high/low indicators'
+    )
+    
+    parser.add_argument(
         '--quiet',
         action='store_true',
         help='Suppress progress output'
@@ -214,6 +239,13 @@ Notes:
         print(f"\nComputing indicators for {len(data_dict)} symbols...")
         print(f"  SMA periods: {args.sma_periods}")
         print(f"  RSI periods: {args.rsi_periods}")
+        if args.ema_periods:
+            print(f"  EMA periods: {args.ema_periods[:5]}... ({len(args.ema_periods)} total)")
+        else:
+            print(f"  EMA periods: 2-200, then 250-1000 by 50s (default)")
+        print(f"  Candlestick patterns: {'No' if args.no_candlestick_patterns else 'Yes'}")
+        print(f"  Streak indicators: {'No' if args.no_streak_indicators else 'Yes'}")
+        print(f"  High/Low day tracking: {'No' if args.no_high_low_days else 'Yes'}")
         print()
     
     try:
@@ -228,6 +260,10 @@ Notes:
             data_dict,
             sma_periods=args.sma_periods,
             rsi_periods=args.rsi_periods,
+            ema_periods=args.ema_periods,
+            include_candlestick_patterns=not args.no_candlestick_patterns,
+            include_streak_indicators=not args.no_streak_indicators,
+            include_high_low_days=not args.no_high_low_days,
             show_progress=not args.quiet
         )
         

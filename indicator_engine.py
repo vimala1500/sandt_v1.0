@@ -307,17 +307,21 @@ class IndicatorEngine:
         Returns:
             DataFrame with original data + computed indicators
         """
+        # Start with original data
         result = data.copy()
+        
+        # Collect all new columns in a dictionary for efficient concatenation
+        new_columns = {}
         
         # Compute SMAs
         for period in sma_periods:
             col_name = f"SMA_{period}"
-            result[col_name] = self.compute_sma(data['Close'], period)
+            new_columns[col_name] = self.compute_sma(data['Close'], period)
         
         # Compute RSIs
         for period in rsi_periods:
             col_name = f"RSI_{period}"
-            result[col_name] = self.compute_rsi(data['Close'], period)
+            new_columns[col_name] = self.compute_rsi(data['Close'], period)
         
         # Compute EMAs (2-200, then 250, 300, ..., 1000)
         if ema_periods is None:
@@ -325,25 +329,27 @@ class IndicatorEngine:
         
         for period in ema_periods:
             col_name = f"EMA_{period}"
-            result[col_name] = self.compute_ema(data['Close'], period)
+            new_columns[col_name] = self.compute_ema(data['Close'], period)
         
         # Compute candlestick patterns
         if include_candlestick_patterns:
             patterns = compute_all_patterns(data)
-            for pattern_name, pattern_series in patterns.items():
-                result[pattern_name] = pattern_series
+            new_columns.update(patterns)
         
         # Compute streak indicators
         if include_streak_indicators:
-            result['consec_higher_high'] = self.compute_consec_higher_high(data)
-            result['consec_lower_low'] = self.compute_consec_lower_low(data)
+            new_columns['consec_higher_high'] = self.compute_consec_higher_high(data)
+            new_columns['consec_lower_low'] = self.compute_consec_lower_low(data)
         
         # Compute days since prev high/low
         if include_high_low_days:
-            result['days_since_prev_high'] = self.compute_days_since_prev_high(data)
-            result['days_since_prev_low'] = self.compute_days_since_prev_low(data)
+            new_columns['days_since_prev_high'] = self.compute_days_since_prev_high(data)
+            new_columns['days_since_prev_low'] = self.compute_days_since_prev_low(data)
         
-        return result
+        # Concatenate all new columns at once to avoid fragmentation
+        if new_columns:
+            new_df = pd.DataFrame(new_columns, index=data.index)
+            result = pd.concat([result, new_df], axis=1)
         
         return result
     

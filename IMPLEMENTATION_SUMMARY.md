@@ -1,6 +1,172 @@
-# Implementation Summary: Dynamic RSI Period Caching
+# Implementation Summary
 
-## Problem Statement
+## Latest Update: Enhanced Indicator Storage Pipeline
+
+### New Features Added (February 2026)
+
+A comprehensive set of new technical indicators and pattern detection features have been added to the indicator storage/data pipeline:
+
+#### 1. Exponential Moving Averages (EMAs)
+- **Periods**: 2-200 (every period), then 250, 300, 350, ..., 1000 (every 50)
+- **Total**: 215 EMA indicators per symbol
+- **Column naming**: `EMA_{period}` (e.g., `EMA_50`, `EMA_200`)
+- **Implementation**: Vectorized using pandas `ewm()` with `adjust=False`
+
+#### 2. Days Since Previous High/Low Tracking
+- **`days_since_prev_high`**: Tracks when a stock hits a new all-time high (over 5 years)
+  - Records the number of trading days since the previous record high
+  - Value is 0 for days that are not new highs
+  - Uses 5-year (1260 trading days) lookback window
+  
+- **`days_since_prev_low`**: Tracks when a stock hits a new all-time low (over 5 years)
+  - Records the number of trading days since the previous record low
+  - Value is 0 for days that are not new lows
+  - Uses 5-year (1260 trading days) lookback window
+
+#### 3. Consecutive Streak Indicators
+- **`consec_higher_high`**: Counts consecutive days where High > previous High
+  - Resets to 0 when streak breaks
+  - Useful for identifying momentum and trend strength
+  
+- **`consec_lower_low`**: Counts consecutive days where Low < previous Low
+  - Resets to 0 when streak breaks
+  - Useful for identifying downward momentum
+
+#### 4. Candlestick Pattern Detection
+Pure Python implementation of 12 major candlestick patterns:
+
+**Reversal Patterns:**
+- `engulfing_bull`: Bullish engulfing pattern (bearish → bullish reversal)
+- `engulfing_bear`: Bearish engulfing pattern (bullish → bearish reversal)
+- `hammer`: Hammer pattern (potential bullish reversal)
+- `hanging_man`: Hanging man pattern (potential bearish reversal)
+- `shooting_star`: Shooting star pattern (bearish reversal)
+- `harami_bull`: Bullish harami pattern (potential reversal)
+- `harami_bear`: Bearish harami pattern (potential reversal)
+
+**Continuation/Special Patterns:**
+- `doji`: Doji pattern (indecision, potential reversal)
+- `dark_cloud`: Dark cloud cover (bearish reversal)
+- `piercing`: Piercing pattern (bullish reversal)
+- `three_white_soldiers`: Three white soldiers (strong bullish continuation)
+- `three_black_crows`: Three black crows (strong bearish continuation)
+
+All pattern columns contain:
+- `1` if pattern detected on that date
+- `0` otherwise
+
+### Implementation Details
+
+#### Module Structure
+- **`candlestick_patterns.py`**: New module with pure Python pattern detection
+  - Vectorized operations using pandas/numpy for performance
+  - No external dependencies (TA-Lib not required)
+  - Efficient computation on long price histories
+  
+- **`indicator_engine.py`**: Enhanced with new methods
+  - `compute_ema()`: EMA computation
+  - `compute_days_since_prev_high()`: High tracking
+  - `compute_days_since_prev_low()`: Low tracking
+  - `compute_consec_higher_high()`: Higher high streaks
+  - `compute_consec_lower_low()`: Lower low streaks
+  - Updated `compute_indicators()` with new parameters
+  - Updated storage/config methods
+
+- **`compute_indicators.py`**: Updated CLI script
+  - New flags: `--ema-periods`, `--no-candlestick-patterns`, etc.
+  - Backward compatible with existing usage
+  - All features enabled by default
+
+#### Performance Characteristics
+- **EMA computation**: O(n) per period, vectorized
+- **Streak indicators**: O(n) with single pass
+- **High/Low tracking**: O(n*window) with optimized lookback
+- **Candlestick patterns**: O(n) per pattern, vectorized
+
+#### Storage Format
+- All indicators stored in HDF5 with zlib compression (level 9)
+- Configuration tracked in JSON including new feature flags
+- Typical storage overhead: ~50-100KB per symbol for all new indicators
+
+### Testing
+
+#### Test Coverage
+Created comprehensive test suite in `test_new_indicators.py`:
+- ✅ EMA computation for various periods (2, 10, 50, 100, 200, 250, 500, 1000)
+- ✅ Consecutive streak indicators with specific test patterns
+- ✅ Days since high/low tracking with synthetic data
+- ✅ All 12 candlestick patterns individually
+- ✅ Full integration with HDF5 storage
+- ✅ Config persistence and loading
+
+All tests pass successfully.
+
+### Usage Examples
+
+#### Computing Indicators with All New Features
+```bash
+# Default: All features enabled
+python compute_indicators.py
+
+# Disable specific features
+python compute_indicators.py --no-candlestick-patterns
+python compute_indicators.py --no-streak-indicators
+python compute_indicators.py --no-high-low-days
+
+# Custom EMA periods
+python compute_indicators.py --ema-periods 10 20 50 100 200
+```
+
+#### Programmatic Usage
+```python
+from indicator_engine import IndicatorEngine
+
+engine = IndicatorEngine("./data/indicators")
+
+# Compute all indicators (default behavior)
+result = engine.compute_indicators(
+    data,
+    sma_periods=[20, 50, 200],
+    rsi_periods=[14],
+    ema_periods=None,  # Uses default: 2-200, 250-1000
+    include_candlestick_patterns=True,
+    include_streak_indicators=True,
+    include_high_low_days=True
+)
+
+# Access new indicators
+ema_50 = result['EMA_50']
+days_high = result['days_since_prev_high']
+consecutive_hh = result['consec_higher_high']
+hammer_pattern = result['hammer']
+```
+
+### Backward Compatibility
+- All changes are backward compatible
+- Existing code continues to work without modifications
+- New features are opt-in via parameters (though enabled by default in CLI)
+- Existing HDF5 files can be extended with new indicators
+
+### Configuration Tracking
+The `config.json` now includes:
+```json
+{
+  "SYMBOL": {
+    "sma_periods": [20, 50, 200],
+    "rsi_periods": [14],
+    "ema_periods": [2, 3, ..., 200, 250, ..., 1000],
+    "candlestick_patterns": true,
+    "streak_indicators": true,
+    "high_low_days": true
+  }
+}
+```
+
+---
+
+## Previous Implementation: Dynamic RSI Period Caching
+
+### Problem Statement
 Users could only scan with pre-computed RSI periods (typically only RSI 14). If they wanted to scan with a different period like RSI 30 or RSI 50, they had to rerun the entire indicator computation process for all symbols.
 
 ## Solution Implemented

@@ -244,6 +244,89 @@ class Scanner:
         
         return df
     
+    def scan_by_indicator(
+        self,
+        symbols: List[str],
+        indicator: str,
+        operator: str,
+        threshold: float,
+        include_value: bool = True
+    ) -> pd.DataFrame:
+        """
+        Scan stocks by any indicator with flexible comparison operators.
+        
+        Args:
+            symbols: List of symbols to scan
+            indicator: Indicator column name (e.g., 'RSI_14', 'EMA_50', 'hammer')
+            operator: Comparison operator ('>', '<', '>=', '<=', '==', '!=')
+            threshold: Threshold value to compare against
+            include_value: Whether to include the indicator value in results
+            
+        Returns:
+            DataFrame with matching stocks and their metrics
+        """
+        results = []
+        
+        for symbol in symbols:
+            try:
+                # Load indicators
+                data = self.indicator_engine.load_indicators(symbol)
+                if data is None or len(data) == 0:
+                    continue
+                
+                # Check if indicator exists
+                if indicator not in data.columns:
+                    continue
+                
+                # Get latest value
+                latest_value = data[indicator].iloc[-1]
+                
+                # Skip NaN values
+                if pd.isna(latest_value):
+                    continue
+                
+                # Evaluate condition
+                is_match = False
+                if operator == '>':
+                    is_match = latest_value > threshold
+                elif operator == '<':
+                    is_match = latest_value < threshold
+                elif operator == '>=':
+                    is_match = latest_value >= threshold
+                elif operator == '<=':
+                    is_match = latest_value <= threshold
+                elif operator == '==':
+                    is_match = latest_value == threshold
+                elif operator == '!=':
+                    is_match = latest_value != threshold
+                else:
+                    print(f"Unknown operator: {operator}")
+                    continue
+                
+                if is_match:
+                    result_dict = {
+                        'symbol': symbol,
+                        'close': float(data['Close'].iloc[-1]),
+                        'date': data.index[-1]
+                    }
+                    if include_value:
+                        result_dict[indicator] = float(latest_value)
+                    results.append(result_dict)
+            
+            except Exception as e:
+                print(f"Error scanning {symbol}: {e}")
+        
+        if not results:
+            return pd.DataFrame()
+        
+        df = pd.DataFrame(results)
+        
+        # Sort by indicator value if included
+        if include_value and indicator in df.columns:
+            df = df.sort_values(indicator)
+        
+        return df
+    
     def custom_scan(
         self,
         symbols: List[str],
@@ -291,6 +374,29 @@ class Scanner:
             df = self._add_backtest_stats(df, strategy_name)
         
         return df
+    
+    def get_available_indicators(self) -> List[str]:
+        """
+        Get list of available indicators from stored data.
+        
+        Returns:
+            List of indicator column names
+        """
+        # Try to get indicators from first available symbol
+        symbols = self.indicator_engine.list_available_symbols()
+        if not symbols:
+            return []
+        
+        # Load first symbol to get column names
+        data = self.indicator_engine.load_indicators(symbols[0])
+        if data is None:
+            return []
+        
+        # Filter out OHLCV columns
+        ohlcv_cols = ['Open', 'High', 'Low', 'Close', 'Volume']
+        indicator_cols = [col for col in data.columns if col not in ohlcv_cols]
+        
+        return sorted(indicator_cols)
     
     def _add_backtest_stats(self, scan_df: pd.DataFrame, strategy_name: str) -> pd.DataFrame:
         """

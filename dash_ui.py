@@ -87,6 +87,114 @@ class DashUI:
     def _setup_layout(self):
         """Setup the UI layout."""
         self.app.layout = dbc.Container([
+            # Custom CSS for modern design
+            html.Style("""
+                /* Modern color scheme and typography */
+                body {
+                    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+                }
+                
+                .card {
+                    border-radius: 12px;
+                    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
+                    transition: transform 0.2s, box-shadow 0.2s;
+                    border: none;
+                }
+                
+                .card:hover {
+                    transform: translateY(-2px);
+                    box-shadow: 0 8px 12px rgba(0, 0, 0, 0.12);
+                }
+                
+                .card-header {
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    color: white;
+                    border-radius: 12px 12px 0 0 !important;
+                    padding: 15px 20px;
+                    border: none;
+                }
+                
+                .btn {
+                    border-radius: 8px;
+                    font-weight: 500;
+                    transition: all 0.2s;
+                    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+                }
+                
+                .btn:hover {
+                    transform: translateY(-1px);
+                    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+                }
+                
+                .nav-tabs .nav-link {
+                    border-radius: 8px 8px 0 0;
+                    font-weight: 500;
+                    transition: all 0.2s;
+                }
+                
+                .nav-tabs .nav-link.active {
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    color: white !important;
+                    border: none;
+                }
+                
+                .alert {
+                    border-radius: 10px;
+                    border-left: 4px solid;
+                }
+                
+                h1, h2, h3, h4, h5 {
+                    font-weight: 600;
+                    color: #2c3e50;
+                }
+                
+                .main-title {
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    -webkit-background-clip: text;
+                    -webkit-text-fill-color: transparent;
+                    background-clip: text;
+                    font-weight: 700;
+                    text-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                }
+                
+                /* Table styling improvements */
+                .dash-table-container {
+                    border-radius: 8px;
+                    overflow: hidden;
+                }
+                
+                .dash-spreadsheet-container .dash-spreadsheet-inner tr:hover {
+                    background-color: #e3f2fd !important;
+                }
+                
+                /* Mobile responsiveness */
+                @media (max-width: 768px) {
+                    .card {
+                        margin-bottom: 1rem;
+                    }
+                    
+                    h1 {
+                        font-size: 1.75rem;
+                    }
+                    
+                    .btn {
+                        width: 100%;
+                        margin-bottom: 0.5rem;
+                    }
+                }
+                
+                /* Animation for loading states */
+                @keyframes pulse {
+                    0%, 100% { opacity: 1; }
+                    50% { opacity: 0.5; }
+                }
+                
+                .loading {
+                    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+                }
+            """),
+            
             # Session status banner
             html.Div(id='session-status-banner', className="mb-3"),
             
@@ -102,7 +210,12 @@ class DashUI:
             
             dbc.Row([
                 dbc.Col([
-                    html.H1("Stock Scanner & Backtest Analyzer", className="text-center mb-4"),
+                    html.H1("Stock Scanner & Backtest Analyzer", 
+                           className="text-center mb-2 main-title",
+                           style={'fontSize': '2.5rem'}),
+                    html.P("Professional Trading Strategy Analysis Platform", 
+                          className="text-center text-muted mb-4",
+                          style={'fontSize': '1.1rem', 'fontWeight': '300'})
                 ], width=12)
             ]),
             
@@ -129,7 +242,7 @@ class DashUI:
                     children=self._create_quick_backtest_layout()
                 )
             ], id="main-tabs", active_tab="scanner-tab", className="mb-4")
-        ], fluid=True)
+        ], fluid=True, style={'paddingTop': '20px', 'paddingBottom': '40px'})
     
     def _create_scanner_layout(self):
         """Create scanner tab layout."""
@@ -418,7 +531,29 @@ class DashUI:
         def check_session_health(n_intervals, session_id):
             """Periodic health check of the session."""
             if not session_id:
-                return None
+                # No session - show prominent "Start New Session" banner
+                return dbc.Alert([
+                    html.Div([
+                        html.H5("🔔 Session Not Found", className="alert-heading mb-3"),
+                        html.P([
+                            "Your session could not be found. This may happen if:",
+                            html.Ul([
+                                html.Li("The page was refreshed after a long period of inactivity"),
+                                html.Li("The server was restarted"),
+                                html.Li("There was a connection issue")
+                            ], className="mb-3")
+                        ]),
+                        dbc.Button(
+                            "🔄 Start New Session",
+                            id='start-new-session-btn',
+                            color="primary",
+                            size="lg",
+                            className="me-2"
+                        ),
+                        html.Span("Click to create a new session and continue", className="text-muted small")
+                    ])
+                ], color="warning", dismissable=False, className="mb-4", 
+                   style={'border': '2px solid #ff9800', 'boxShadow': '0 4px 8px rgba(0,0,0,0.1)'})
             
             # Update session activity
             self.session_manager.update_session_activity(session_id)
@@ -443,14 +578,65 @@ class DashUI:
                 alert_color = severity_map.get(status_type, 'warning')
                 
                 banner = dbc.Alert([
-                    html.Div(message),
+                    html.H5([
+                        "⚠️ Session Issue Detected" if alert_color == 'warning' else "❌ Session Error"
+                    ], className="alert-heading"),
+                    html.Div(message, className="mb-2"),
                     html.Hr() if recovery else None,
-                    html.Small(recovery, style={'whiteSpace': 'pre-line'}) if recovery else None
-                ], color=alert_color, dismissable=True, className="mb-3")
+                    html.Div([
+                        html.Strong("Recovery Steps:", className="d-block mb-2"),
+                        html.Pre(recovery, style={'whiteSpace': 'pre-line', 'fontSize': '0.9em'})
+                    ], className="mb-3") if recovery else None,
+                    dbc.ButtonGroup([
+                        dbc.Button(
+                            "🔄 Refresh Page",
+                            id='refresh-page-btn',
+                            color="primary",
+                            size="sm",
+                            outline=True
+                        ),
+                        dbc.Button(
+                            "🆕 Start New Session",
+                            id='start-new-session-btn',
+                            color="success",
+                            size="sm"
+                        )
+                    ])
+                ], color=alert_color, dismissable=True, className="mb-4",
+                   style={'border': f'2px solid {{"danger": "#dc3545", "warning": "#ff9800"}}.get(alert_color, "#ff9800")}',
+                          'boxShadow': '0 4px 8px rgba(0,0,0,0.1)'})
                 
                 return banner
             
             return None
+        
+        @self.app.callback(
+            Output('session-id-store', 'data'),
+            [Input('start-new-session-btn', 'n_clicks'),
+             Input('refresh-page-btn', 'n_clicks')],
+            prevent_initial_call=True
+        )
+        def handle_session_recovery(new_session_clicks, refresh_clicks):
+            """Handle session recovery actions."""
+            ctx = callback_context
+            if not ctx.triggered:
+                return dash.no_update
+            
+            button_id = ctx.triggered[0]['prop_id'].split('.')[0]
+            
+            if button_id == 'start-new-session-btn':
+                # Create a new session
+                new_session_id = str(uuid.uuid4())
+                self.session_manager.create_session(
+                    new_session_id,
+                    metadata={'type': 'dash_ui_recovery', 'indicator_path': self.indicator_engine.storage_path}
+                )
+                return new_session_id
+            elif button_id == 'refresh-page-btn':
+                # Trigger a page refresh - handled by clientside callback
+                return dash.no_update
+            
+            return dash.no_update
         
         @self.app.callback(
             [Output('rsi-controls', 'style'),

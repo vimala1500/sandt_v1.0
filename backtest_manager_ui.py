@@ -498,6 +498,10 @@ class BacktestManagerUI:
                 # Success - unpack results
                 results_df, job_stats = result
                 
+                # Add view trades action column to results
+                if len(results_df) > 0:
+                    results_df['view_trades_action'] = '**[📊 View Details]**'
+                
                 # Store results
                 results_data = results_df.to_dict('records') if len(results_df) > 0 else []
                 
@@ -769,64 +773,104 @@ class BacktestManagerUI:
                         ], className="small text-muted ms-3")
                     ]),
                     dbc.CardBody([
-                        dash_table.DataTable(
-                            id={'type': 'results-table', 'strategy': strategy},
-                            data=strategy_df.to_dict('records'),
-                            columns=[
-                                {'name': 'Symbol', 'id': 'symbol'},
-                                {'name': 'Params', 'id': 'params_str'},
-                                {'name': 'Exit', 'id': 'exit_rule'},
-                                {'name': 'Win Rate', 'id': 'win_rate', 'type': 'numeric',
-                                 'format': {'specifier': '.1%'}},
-                                {'name': 'Trades', 'id': 'num_trades'},
-                                {'name': 'CAGR', 'id': 'cagr', 'type': 'numeric',
-                                 'format': {'specifier': '.1%'}},
-                                {'name': 'Sharpe', 'id': 'sharpe_ratio', 'type': 'numeric',
-                                 'format': {'specifier': '.2f'}},
-                                {'name': 'Max DD', 'id': 'max_drawdown', 'type': 'numeric',
-                                 'format': {'specifier': '.1%'}},
-                                {'name': 'Total Ret', 'id': 'total_return', 'type': 'numeric',
-                                 'format': {'specifier': '.1%'}}
-                            ],
-                            style_table={'overflowX': 'auto'},
-                            style_cell={
-                                'textAlign': 'left',
-                                'padding': '8px',
-                                'fontSize': '13px',
-                                'minWidth': '80px',
-                                'cursor': 'pointer'
-                            },
-                            style_header={
-                                'backgroundColor': 'rgb(230, 230, 230)',
-                                'fontWeight': 'bold',
-                                'fontSize': '12px'
-                            },
-                            style_data_conditional=[
-                                {
-                                    'if': {'row_index': 'odd'},
-                                    'backgroundColor': 'rgb(248, 248, 248)'
+                        html.Div([
+                            html.P("💡 Click any row or use the '👁️ View Trades' button to see detailed trade-by-trade results", 
+                                   className="text-muted small mb-2"),
+                            dash_table.DataTable(
+                                id={'type': 'results-table', 'strategy': strategy},
+                                data=strategy_df.to_dict('records'),
+                                columns=[
+                                    {'name': 'Symbol', 'id': 'symbol'},
+                                    {'name': 'Params', 'id': 'params_str'},
+                                    {'name': 'Exit', 'id': 'exit_rule'},
+                                    {'name': 'Win Rate', 'id': 'win_rate', 'type': 'numeric',
+                                     'format': {'specifier': '.1%'}},
+                                    {'name': 'Trades', 'id': 'num_trades'},
+                                    {'name': 'CAGR', 'id': 'cagr', 'type': 'numeric',
+                                     'format': {'specifier': '.1%'}},
+                                    {'name': 'Sharpe', 'id': 'sharpe_ratio', 'type': 'numeric',
+                                     'format': {'specifier': '.2f'}},
+                                    {'name': 'Max DD', 'id': 'max_drawdown', 'type': 'numeric',
+                                     'format': {'specifier': '.1%'}},
+                                    {'name': 'Total Ret', 'id': 'total_return', 'type': 'numeric',
+                                     'format': {'specifier': '.1%'}},
+                                    {'name': '👁️ View Trades', 'id': 'view_trades_action', 
+                                     'presentation': 'markdown'}
+                                ],
+                                style_table={'overflowX': 'auto'},
+                                style_cell={
+                                    'textAlign': 'left',
+                                    'padding': '10px',
+                                    'fontSize': '14px',
+                                    'minWidth': '80px',
                                 },
-                                {
-                                    'if': {
-                                        'filter_query': '{sharpe_ratio} > 1',
-                                        'column_id': 'sharpe_ratio'
-                                    },
-                                    'backgroundColor': '#d4edda',
-                                    'color': '#155724'
+                                style_cell_conditional=[
+                                    {
+                                        'if': {'column_id': 'view_trades_action'},
+                                        'textAlign': 'center',
+                                        'width': '120px',
+                                        'cursor': 'pointer',
+                                        'backgroundColor': '#e8f4f8',
+                                        'fontWeight': 'bold',
+                                        'color': '#0066cc'
+                                    }
+                                ],
+                                style_header={
+                                    'backgroundColor': '#2c3e50',
+                                    'color': 'white',
+                                    'fontWeight': 'bold',
+                                    'fontSize': '13px',
+                                    'textAlign': 'center',
+                                    'border': '1px solid #34495e'
                                 },
-                                {
-                                    'if': {
-                                        'filter_query': '{win_rate} > 0.6',
-                                        'column_id': 'win_rate'
+                                style_data_conditional=[
+                                    {
+                                        'if': {'row_index': 'odd'},
+                                        'backgroundColor': '#f8f9fa'
                                     },
-                                    'backgroundColor': '#d4edda',
-                                    'color': '#155724'
-                                }
-                            ],
-                            sort_action='native',
-                            filter_action='native',
-                            page_size=20
-                        )
+                                    {
+                                        'if': {'row_index': 'even'},
+                                        'backgroundColor': '#ffffff'
+                                    },
+                                    {
+                                        'if': {
+                                            'filter_query': '{sharpe_ratio} > 1',
+                                            'column_id': 'sharpe_ratio'
+                                        },
+                                        'backgroundColor': '#d4edda',
+                                        'color': '#155724',
+                                        'fontWeight': '600'
+                                    },
+                                    {
+                                        'if': {
+                                            'filter_query': '{win_rate} > 0.6',
+                                            'column_id': 'win_rate'
+                                        },
+                                        'backgroundColor': '#d4edda',
+                                        'color': '#155724',
+                                        'fontWeight': '600'
+                                    },
+                                    {
+                                        'if': {'state': 'active'},
+                                        'backgroundColor': '#d1ecf1',
+                                        'border': '2px solid #0066cc'
+                                    }
+                                ],
+                                sort_action='native',
+                                filter_action='native',
+                                page_size=20,
+                                tooltip_data=[
+                                    {
+                                        'view_trades_action': {'value': 'Click to view detailed trade-by-trade results', 'type': 'text'}
+                                    } for _ in range(len(strategy_df))
+                                ],
+                                tooltip_duration=None,
+                                css=[{
+                                    'selector': '.dash-table-tooltip',
+                                    'rule': 'background-color: #2c3e50; color: white; font-size: 12px; padding: 8px; border-radius: 4px;'
+                                }]
+                            )
+                        ])
                     ])
                 ], className="mb-3")
             )
@@ -858,64 +902,104 @@ class BacktestManagerUI:
                         ], className="small text-muted ms-3")
                     ]),
                     dbc.CardBody([
-                        dash_table.DataTable(
-                            id={'type': 'results-table', 'symbol': symbol},
-                            data=symbol_df.to_dict('records'),
-                            columns=[
-                                {'name': 'Strategy', 'id': 'strategy'},
-                                {'name': 'Params', 'id': 'params_str'},
-                                {'name': 'Exit', 'id': 'exit_rule'},
-                                {'name': 'Win Rate', 'id': 'win_rate', 'type': 'numeric',
-                                 'format': {'specifier': '.1%'}},
-                                {'name': 'Trades', 'id': 'num_trades'},
-                                {'name': 'CAGR', 'id': 'cagr', 'type': 'numeric',
-                                 'format': {'specifier': '.1%'}},
-                                {'name': 'Sharpe', 'id': 'sharpe_ratio', 'type': 'numeric',
-                                 'format': {'specifier': '.2f'}},
-                                {'name': 'Max DD', 'id': 'max_drawdown', 'type': 'numeric',
-                                 'format': {'specifier': '.1%'}},
-                                {'name': 'Total Ret', 'id': 'total_return', 'type': 'numeric',
-                                 'format': {'specifier': '.1%'}}
-                            ],
-                            style_table={'overflowX': 'auto'},
-                            style_cell={
-                                'textAlign': 'left',
-                                'padding': '8px',
-                                'fontSize': '13px',
-                                'minWidth': '80px',
-                                'cursor': 'pointer'
-                            },
-                            style_header={
-                                'backgroundColor': 'rgb(230, 230, 230)',
-                                'fontWeight': 'bold',
-                                'fontSize': '12px'
-                            },
-                            style_data_conditional=[
-                                {
-                                    'if': {'row_index': 'odd'},
-                                    'backgroundColor': 'rgb(248, 248, 248)'
+                        html.Div([
+                            html.P("💡 Click any row or use the '👁️ View Trades' button to see detailed trade-by-trade results", 
+                                   className="text-muted small mb-2"),
+                            dash_table.DataTable(
+                                id={'type': 'results-table', 'symbol': symbol},
+                                data=symbol_df.to_dict('records'),
+                                columns=[
+                                    {'name': 'Strategy', 'id': 'strategy'},
+                                    {'name': 'Params', 'id': 'params_str'},
+                                    {'name': 'Exit', 'id': 'exit_rule'},
+                                    {'name': 'Win Rate', 'id': 'win_rate', 'type': 'numeric',
+                                     'format': {'specifier': '.1%'}},
+                                    {'name': 'Trades', 'id': 'num_trades'},
+                                    {'name': 'CAGR', 'id': 'cagr', 'type': 'numeric',
+                                     'format': {'specifier': '.1%'}},
+                                    {'name': 'Sharpe', 'id': 'sharpe_ratio', 'type': 'numeric',
+                                     'format': {'specifier': '.2f'}},
+                                    {'name': 'Max DD', 'id': 'max_drawdown', 'type': 'numeric',
+                                     'format': {'specifier': '.1%'}},
+                                    {'name': 'Total Ret', 'id': 'total_return', 'type': 'numeric',
+                                     'format': {'specifier': '.1%'}},
+                                    {'name': '👁️ View Trades', 'id': 'view_trades_action', 
+                                     'presentation': 'markdown'}
+                                ],
+                                style_table={'overflowX': 'auto'},
+                                style_cell={
+                                    'textAlign': 'left',
+                                    'padding': '10px',
+                                    'fontSize': '14px',
+                                    'minWidth': '80px',
                                 },
-                                {
-                                    'if': {
-                                        'filter_query': '{sharpe_ratio} > 1',
-                                        'column_id': 'sharpe_ratio'
-                                    },
-                                    'backgroundColor': '#d4edda',
-                                    'color': '#155724'
+                                style_cell_conditional=[
+                                    {
+                                        'if': {'column_id': 'view_trades_action'},
+                                        'textAlign': 'center',
+                                        'width': '120px',
+                                        'cursor': 'pointer',
+                                        'backgroundColor': '#e8f4f8',
+                                        'fontWeight': 'bold',
+                                        'color': '#0066cc'
+                                    }
+                                ],
+                                style_header={
+                                    'backgroundColor': '#2c3e50',
+                                    'color': 'white',
+                                    'fontWeight': 'bold',
+                                    'fontSize': '13px',
+                                    'textAlign': 'center',
+                                    'border': '1px solid #34495e'
                                 },
-                                {
-                                    'if': {
-                                        'filter_query': '{win_rate} > 0.6',
-                                        'column_id': 'win_rate'
+                                style_data_conditional=[
+                                    {
+                                        'if': {'row_index': 'odd'},
+                                        'backgroundColor': '#f8f9fa'
                                     },
-                                    'backgroundColor': '#d4edda',
-                                    'color': '#155724'
-                                }
-                            ],
-                            sort_action='native',
-                            filter_action='native',
-                            page_size=20
-                        )
+                                    {
+                                        'if': {'row_index': 'even'},
+                                        'backgroundColor': '#ffffff'
+                                    },
+                                    {
+                                        'if': {
+                                            'filter_query': '{sharpe_ratio} > 1',
+                                            'column_id': 'sharpe_ratio'
+                                        },
+                                        'backgroundColor': '#d4edda',
+                                        'color': '#155724',
+                                        'fontWeight': '600'
+                                    },
+                                    {
+                                        'if': {
+                                            'filter_query': '{win_rate} > 0.6',
+                                            'column_id': 'win_rate'
+                                        },
+                                        'backgroundColor': '#d4edda',
+                                        'color': '#155724',
+                                        'fontWeight': '600'
+                                    },
+                                    {
+                                        'if': {'state': 'active'},
+                                        'backgroundColor': '#d1ecf1',
+                                        'border': '2px solid #0066cc'
+                                    }
+                                ],
+                                sort_action='native',
+                                filter_action='native',
+                                page_size=20,
+                                tooltip_data=[
+                                    {
+                                        'view_trades_action': {'value': 'Click to view detailed trade-by-trade results', 'type': 'text'}
+                                    } for _ in range(len(symbol_df))
+                                ],
+                                tooltip_duration=None,
+                                css=[{
+                                    'selector': '.dash-table-tooltip',
+                                    'rule': 'background-color: #2c3e50; color: white; font-size: 12px; padding: 8px; border-radius: 4px;'
+                                }]
+                            )
+                        ])
                     ])
                 ], className="mb-3")
             )

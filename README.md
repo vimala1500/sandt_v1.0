@@ -1,6 +1,6 @@
 # Stock Analysis & Trading System (sandt_v1.0)
 
-A complete, modular stock analysis and backtesting system with web UI. Features Numba-accelerated vectorized backtests, technical indicator computation, live scanning, and interactive Dash UI. Deployable locally, on Google Colab, or as a web service on Railway.
+A complete, modular stock analysis and backtesting system with web UI. Features Numba-accelerated vectorized backtests, technical indicator computation, live scanning, advanced batch backtesting portal, and interactive Dash UI. Deployable locally, on Google Colab, or as a web service on Railway.
 
 > **📌 RSI Values Match TradingView**: Our RSI implementation uses Wilder's recursive averaging method, matching TradingView exactly. To verify: `python verify_rsi.py` or see [RSI_VERIFICATION.md](RSI_VERIFICATION.md)
 
@@ -18,6 +18,8 @@ A complete, modular stock analysis and backtesting system with web UI. Features 
 🎯 Scanner  📊 Backtests         ← Analysis & Strategy Testing
     ↓         ↓
 🌐 Web UI (Dash)                 ← Interactive Dashboard
+    ↓
+🚀 Backtest Manager              ← Batch Backtesting Portal
 ```
 
 **Critical Step**: The indicator computation (`compute_indicators.py`) is REQUIRED before using any other features. See [First-Time Setup](#first-time-setup-required) below.
@@ -38,6 +40,12 @@ A complete, modular stock analysis and backtesting system with web UI. Features 
   - Momentum streak detection
   - Custom EMA/SMA combinations
   - Days since high/low breakouts
+- **🆕 Advanced Backtest Manager Portal**: Professional batch backtesting interface (See [BACKTEST_MANAGER_GUIDE.md](BACKTEST_MANAGER_GUIDE.md))
+  - Multi-select strategies and symbols
+  - Batch execution with progress tracking
+  - Grouped results (by strategy/symbol)
+  - CSV/XLSX export
+  - Group set management (save/load configurations)
 - **Multiple Strategies**: 
   - Moving Average Crossover (arbitrary fast/slow pairs)
   - RSI Mean-Reversion (arbitrary periods/thresholds)
@@ -49,6 +57,7 @@ A complete, modular stock analysis and backtesting system with web UI. Features 
   - 8 scan types including candlestick patterns, momentum streaks, and custom filters
   - Dynamic indicator dropdown populated from available data
   - Flexible comparison operators for custom filtering
+  - Tabbed interface with Scanner, Backtest Manager, and Quick Backtest
 - **Flexible Deployment**: Run locally, on Google Colab, or deploy as a web service
 
 ### Performance Metrics
@@ -63,20 +72,24 @@ All backtests output standardized metrics per [strategy, symbol] pair:
 
 ```
 sandt_v1.0/
-├── app.py                     # Production web server entry point
-├── main.py                    # Pipeline orchestration
-├── data_loader.py             # Parquet OHLCV data loading
-├── indicator_engine.py        # SMA/RSI computation, HDF5/JSON storage
-├── strategy.py                # Strategy registry and parameterization
-├── backtest_engine.py         # Numba-accelerated backtests, Zarr output
-├── scanner.py                 # Live scanning with backtest cross-reference
-├── dash_ui.py                 # Interactive Dash web UI
+├── app.py                       # Production web server entry point
+├── main.py                      # Pipeline orchestration
+├── data_loader.py               # Parquet OHLCV data loading
+├── indicator_engine.py          # SMA/RSI computation, HDF5/JSON storage
+├── strategy.py                  # Strategy registry and parameterization
+├── backtest_engine.py           # Numba-accelerated backtests, Zarr output
+├── backtest_store.py            # Centralized backtest storage & retrieval
+├── backtest_manager_ui.py       # 🆕 Advanced batch backtesting portal
+├── scanner.py                   # Live scanning with backtest cross-reference
+├── dash_ui.py                   # Interactive Dash web UI
 ├── notebooks/
-│   └── colab_quickstart.ipynb # End-to-end Colab demo
-├── Procfile                   # Railway/Heroku deployment config
-├── railway.json               # Railway-specific configuration
-├── requirements.txt           # Python dependencies
-└── README.md                  # This file
+│   └── colab_quickstart.ipynb   # End-to-end Colab demo
+├── Procfile                     # Railway/Heroku deployment config
+├── railway.json                 # Railway-specific configuration
+├── requirements.txt             # Python dependencies
+├── README.md                    # This file
+├── BACKTEST_MANAGER_GUIDE.md    # 🆕 Backtest Manager documentation
+└── BACKTEST_STORAGE.md          # Backtest storage system docs
 ```
 
 ## Installation
@@ -751,6 +764,8 @@ For issues, questions, or feature requests, please open an issue on GitHub.
 ## Documentation
 
 Additional documentation files:
+- **[BACKTEST_MANAGER_GUIDE.md](BACKTEST_MANAGER_GUIDE.md)** - 🆕 Complete guide to the Backtest Manager Portal
+- **[BACKTEST_STORAGE.md](BACKTEST_STORAGE.md)** - Backtest storage and retrieval system
 - **[INDICATOR_CACHING.md](INDICATOR_CACHING.md)** - Complete guide to indicator caching/storage system
 - **[QUICK_REFERENCE.md](QUICK_REFERENCE.md)** - Quick reference for all modules and methods
 - **[RSI_VERIFICATION.md](RSI_VERIFICATION.md)** - RSI calculation verification and TradingView comparison

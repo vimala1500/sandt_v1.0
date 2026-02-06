@@ -102,7 +102,6 @@ class DashUI:
         ], fluid=True)
     
     def _create_scanner_layout(self):
-    def _create_scanner_layout(self):
         """Create scanner tab layout."""
         return html.Div([
             # Indicator computation section

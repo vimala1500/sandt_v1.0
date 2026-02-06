@@ -18,7 +18,7 @@ from typing import Dict, List, Optional, Tuple, Any
 import numpy as np
 import pandas as pd
 import zarr
-from numcodecs import Blosc
+from numcodecs import Blosc, JSON
 from datetime import datetime
 
 
@@ -189,15 +189,23 @@ class BacktestStore:
             if backtest_id in trade_group:
                 del trade_group[backtest_id]
             
-            # Convert DataFrame to structured array
-            trade_records = trades.to_records(index=False)
+            # Convert DataFrame to JSON-serializable dict
+            trades_dict = trades.to_dict('records')
+            # Convert any datetime objects to strings
+            for trade in trades_dict:
+                for key, value in trade.items():
+                    if pd.api.types.is_datetime64_any_dtype(type(value)) or isinstance(value, (pd.Timestamp, np.datetime64)):
+                        trade[key] = str(value)
+            
+            # Store as JSON in a text array
+            trades_json = json.dumps(trades_dict)
+            # Use a simple string array
             trade_data = trade_group.create_dataset(
                 backtest_id,
-                shape=trade_records.shape,
-                dtype=trade_records.dtype,
-                data=trade_records,
-                chunks=(min(len(trades), 100),)
+                shape=(1,),
+                dtype=f'U{len(trades_json)}'  # Unicode string with appropriate length
             )
+            trade_data[0] = trades_json
         
         return backtest_id
     
@@ -311,8 +319,9 @@ class BacktestStore:
         # Load trade details if available
         trade_group = self.root.get('trade_details')
         if trade_group is not None and backtest_id in trade_group:
-            trade_data = trade_group[backtest_id][:]
-            result['trades'] = pd.DataFrame(trade_data)
+            trade_json = trade_group[backtest_id][0]
+            trades_dict = json.loads(trade_json)
+            result['trades'] = pd.DataFrame(trades_dict)
         
         return result
     

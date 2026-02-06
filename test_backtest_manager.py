@@ -228,5 +228,136 @@ class TestBacktestManagerUI(unittest.TestCase):
         self.assertIn('fast_period', ma_params[0])
 
 
+class TestTradeExtraction(unittest.TestCase):
+    """Test trade-by-trade extraction functionality."""
+    
+    def setUp(self):
+        """Set up test fixtures."""
+        self.test_dir = tempfile.mkdtemp()
+        self.engine = BacktestEngine(os.path.join(self.test_dir, "backtests"))
+    
+    def tearDown(self):
+        """Clean up test fixtures."""
+        if os.path.exists(self.test_dir):
+            shutil.rmtree(self.test_dir)
+    
+    def test_extract_trades_basic(self):
+        """Test basic trade extraction from positions."""
+        # Create simple test data
+        n_days = 100
+        prices = np.array([100.0 + i * 0.5 for i in range(n_days)])
+        
+        # Simple positions: long for 20 days, flat for 10, long for 20, flat
+        positions = np.zeros(n_days)
+        positions[10:30] = 1  # First trade
+        positions[40:60] = 1  # Second trade
+        
+        # Create equity curve
+        equity = np.full(n_days, 100000.0)
+        for i in range(1, n_days):
+            if positions[i] == 1:
+                price_change = (prices[i] - prices[i-1]) / prices[i-1]
+                equity[i] = equity[i-1] * (1 + price_change)
+            else:
+                equity[i] = equity[i-1]
+        
+        # Create dates
+        dates = pd.date_range('2020-01-01', periods=n_days, freq='D').values
+        
+        # Extract trades
+        trades_df = self.engine.extract_trades(prices, positions, equity, dates)
+        
+        # Verify
+        self.assertIsInstance(trades_df, pd.DataFrame)
+        self.assertEqual(len(trades_df), 2)  # Should have 2 trades
+        
+        # Check columns exist
+        expected_columns = [
+            'Trade No.', 'Entry Date', 'Entry Price', 'Exit Date', 'Exit Price',
+            'Position', 'Size', 'Holding Period', 'P&L %', 'P&L $',
+            'MAE', 'MFE', 'Exit Reason', 'Comments'
+        ]
+        for col in expected_columns:
+            self.assertIn(col, trades_df.columns)
+        
+        # Check first trade
+        first_trade = trades_df.iloc[0]
+        self.assertEqual(first_trade['Trade No.'], 1)
+        self.assertEqual(first_trade['Position'], 'Long')
+        self.assertEqual(first_trade['Holding Period'], 20)
+        self.assertGreater(first_trade['P&L %'], 0)  # Should be profitable given upward prices
+    
+    def test_extract_trades_long_and_short(self):
+        """Test trade extraction with both long and short positions."""
+        n_days = 100
+        prices = np.array([100.0 + i * 0.5 for i in range(n_days)])
+        
+        # Mix of long and short positions
+        positions = np.zeros(n_days)
+        positions[10:30] = 1   # Long trade
+        positions[40:60] = -1  # Short trade
+        
+        equity = np.full(n_days, 100000.0)
+        for i in range(1, n_days):
+            if positions[i] != 0:
+                price_change = (prices[i] - prices[i-1]) / prices[i-1]
+                equity[i] = equity[i-1] * (1 + positions[i] * price_change)
+            else:
+                equity[i] = equity[i-1]
+        
+        dates = pd.date_range('2020-01-01', periods=n_days, freq='D').values
+        
+        trades_df = self.engine.extract_trades(prices, positions, equity, dates)
+        
+        # Verify
+        self.assertEqual(len(trades_df), 2)
+        
+        # Check positions
+        self.assertEqual(trades_df.iloc[0]['Position'], 'Long')
+        self.assertEqual(trades_df.iloc[1]['Position'], 'Short')
+    
+    def test_extract_trades_no_trades(self):
+        """Test trade extraction with no positions."""
+        n_days = 50
+        prices = np.array([100.0] * n_days)
+        positions = np.zeros(n_days)
+        equity = np.full(n_days, 100000.0)
+        dates = pd.date_range('2020-01-01', periods=n_days, freq='D').values
+        
+        trades_df = self.engine.extract_trades(prices, positions, equity, dates)
+        
+        # Should return empty DataFrame
+        self.assertIsInstance(trades_df, pd.DataFrame)
+        self.assertEqual(len(trades_df), 0)
+    
+    def test_backtest_stores_trades(self):
+        """Test that run_backtest stores trades in the result."""
+        # Create test data
+        n_days = 100
+        dates = pd.date_range('2020-01-01', periods=n_days, freq='D')
+        data = pd.DataFrame({
+            'Close': 100 + np.cumsum(np.random.randn(n_days) * 2),
+            'RSI_14': 50 + np.random.randn(n_days) * 10
+        }, index=dates)
+        
+        # Create strategy config
+        from strategy import StrategyConfig
+        config = StrategyConfig(
+            name='rsi_meanrev',
+            params={'rsi_period': 14, 'oversold': 30, 'overbought': 70}
+        )
+        
+        # Run backtest
+        result = self.engine.run_backtest(
+            data=data,
+            strategy_config=config,
+            symbol='TEST'
+        )
+        
+        # Verify trades are in result
+        self.assertIn('trades', result)
+        self.assertIsInstance(result['trades'], pd.DataFrame)
+
+
 if __name__ == '__main__':
     unittest.main()

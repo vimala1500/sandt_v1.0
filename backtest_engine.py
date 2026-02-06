@@ -254,18 +254,21 @@ class BacktestEngine:
         max_favorable = 0.0
         
         for i in range(len(positions)):
-            # Entry signal
-            if positions[i] != 0 and (i == 0 or positions[i-1] == 0):
+            current_pos = positions[i]
+            prev_pos = positions[i-1] if i > 0 else 0
+            
+            # Entry signal - position changes from 0 to non-zero
+            if current_pos != 0 and prev_pos == 0:
                 entry_idx = i
                 entry_price = prices[i]
                 entry_equity = equity[i-1] if i > 0 else initial_capital
-                position_type = 'Long' if positions[i] > 0 else 'Short'
+                position_type = 'Long' if current_pos > 0 else 'Short'
                 max_adverse = 0.0
                 max_favorable = 0.0
                 trade_num += 1
             
             # Track MAE/MFE during the trade
-            elif entry_idx is not None and positions[i] != 0:
+            elif entry_idx is not None and current_pos != 0 and current_pos == prev_pos:
                 if position_type == 'Long':
                     # For long positions
                     pnl_pct = (prices[i] - entry_price) / entry_price
@@ -277,8 +280,8 @@ class BacktestEngine:
                     max_adverse = min(max_adverse, pnl_pct)
                     max_favorable = max(max_favorable, pnl_pct)
             
-            # Exit signal
-            if entry_idx is not None and (positions[i] == 0 or (i > 0 and positions[i] != positions[i-1])):
+            # Exit signal - position changes from non-zero to 0 or reverses
+            if entry_idx is not None and (current_pos == 0 or (prev_pos != 0 and current_pos != prev_pos)):
                 exit_idx = i
                 exit_price = prices[i]
                 exit_equity = equity[i]
@@ -298,7 +301,7 @@ class BacktestEngine:
                 holding_period = exit_idx - entry_idx
                 
                 # Exit reason (simplified)
-                exit_reason = 'Signal Exit' if positions[i] == 0 else 'Signal Reversal'
+                exit_reason = 'Signal Exit' if current_pos == 0 else 'Signal Reversal'
                 
                 trades.append({
                     'Trade No.': trade_num,
@@ -317,15 +320,25 @@ class BacktestEngine:
                     'Comments': ''
                 })
                 
-                # Reset for next trade
-                entry_idx = None
-                entry_price = None
-                position_type = None
-                max_adverse = 0.0
-                max_favorable = 0.0
+                # Reset for next trade or check if it's a reversal
+                if current_pos != 0:
+                    # Signal reversal - immediately enter new position
+                    entry_idx = i
+                    entry_price = prices[i]
+                    entry_equity = equity[i]
+                    position_type = 'Long' if current_pos > 0 else 'Short'
+                    max_adverse = 0.0
+                    max_favorable = 0.0
+                    trade_num += 1
+                else:
+                    entry_idx = None
+                    entry_price = None
+                    position_type = None
+                    max_adverse = 0.0
+                    max_favorable = 0.0
         
         # Handle open position at end
-        if entry_idx is not None:
+        if entry_idx is not None and entry_idx < len(positions):
             exit_idx = len(positions) - 1
             exit_price = prices[exit_idx]
             exit_equity = equity[exit_idx]

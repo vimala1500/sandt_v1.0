@@ -1,0 +1,759 @@
+"""
+Backtest Manager Portal
+========================
+Advanced batch backtesting UI with multi-select, grouped results, and exports.
+
+Features:
+- Multi-select strategies and symbols
+- Batch execution with progress tracking
+- Grouped results (by strategy/symbol)
+- Professional trade breakdowns
+- CSV/XLSX export
+- Group set management
+"""
+
+import json
+import io
+from typing import List, Dict, Any, Optional
+import pandas as pd
+import numpy as np
+import plotly.graph_objs as go
+from dash import dcc, html, dash_table, callback_context
+from dash.dependencies import Input, Output, State
+import dash_bootstrap_components as dbc
+
+from backtest_engine import BacktestEngine
+from strategy import StrategyConfig, StrategyRegistry
+from indicator_engine import IndicatorEngine
+
+
+class BacktestManagerUI:
+    """
+    Advanced Backtest Manager UI component for Dash application.
+    """
+    
+    def __init__(self, indicator_engine: IndicatorEngine, backtest_engine: BacktestEngine):
+        """
+        Initialize the Backtest Manager UI.
+        
+        Args:
+            indicator_engine: IndicatorEngine instance
+            backtest_engine: BacktestEngine instance
+        """
+        self.indicator_engine = indicator_engine
+        self.backtest_engine = backtest_engine
+        self.strategy_registry = StrategyRegistry()
+        
+        # Available strategies with default configurations
+        self.available_strategies = {
+            'rsi_meanrev': {
+                'name': 'RSI Mean Reversion',
+                'params': [
+                    {'rsi_period': 14, 'oversold': 30, 'overbought': 70},
+                    {'rsi_period': 14, 'oversold': 20, 'overbought': 80},
+                    {'rsi_period': 21, 'oversold': 30, 'overbought': 70}
+                ]
+            },
+            'ma_crossover': {
+                'name': 'MA Crossover',
+                'params': [
+                    {'fast_period': 20, 'slow_period': 50},
+                    {'fast_period': 50, 'slow_period': 200},
+                    {'fast_period': 10, 'slow_period': 30}
+                ]
+            }
+        }
+    
+    def create_layout(self) -> dbc.Container:
+        """
+        Create the Backtest Manager UI layout.
+        
+        Returns:
+            Dash layout component
+        """
+        return dbc.Container([
+            html.H2("🚀 Backtest Manager Portal", className="mb-4"),
+            
+            # Configuration Section
+            dbc.Row([
+                # Strategy Selection
+                dbc.Col([
+                    dbc.Card([
+                        dbc.CardHeader("📊 Strategy Selection"),
+                        dbc.CardBody([
+                            html.Label("Select Strategies:", className="fw-bold"),
+                            dcc.Checklist(
+                                id='batch-strategy-checklist',
+                                options=[
+                                    {'label': self.available_strategies[k]['name'], 'value': k}
+                                    for k in self.available_strategies.keys()
+                                ],
+                                value=[],
+                                className="mb-3"
+                            ),
+                            dbc.ButtonGroup([
+                                dbc.Button("Select All", id='select-all-strategies-btn', 
+                                         size="sm", color="secondary", outline=True),
+                                dbc.Button("Clear", id='clear-strategies-btn', 
+                                         size="sm", color="secondary", outline=True)
+                            ], className="mb-3"),
+                            html.Hr(),
+                            html.Label("Parameter Sets:", className="fw-bold"),
+                            html.Div(id='strategy-params-display', className="small text-muted")
+                        ])
+                    ])
+                ], width=4),
+                
+                # Symbol Selection
+                dbc.Col([
+                    dbc.Card([
+                        dbc.CardHeader("📈 Symbol Selection"),
+                        dbc.CardBody([
+                            html.Label("Search & Select Symbols:", className="fw-bold"),
+                            dcc.Input(
+                                id='symbol-search-input',
+                                type='text',
+                                placeholder='Search symbols...',
+                                className="form-control mb-2"
+                            ),
+                            html.Div(
+                                id='symbol-checklist-container',
+                                style={'maxHeight': '300px', 'overflowY': 'auto'},
+                                className="mb-3"
+                            ),
+                            dbc.ButtonGroup([
+                                dbc.Button("Select All", id='select-all-symbols-btn', 
+                                         size="sm", color="secondary", outline=True),
+                                dbc.Button("Clear", id='clear-symbols-btn', 
+                                         size="sm", color="secondary", outline=True)
+                            ], className="mb-2"),
+                            html.Hr(),
+                            html.Label("Bulk Import:", className="fw-bold"),
+                            dcc.Textarea(
+                                id='bulk-symbol-input',
+                                placeholder='Paste symbols (comma or newline separated)',
+                                style={'height': '80px'},
+                                className="form-control mb-2"
+                            ),
+                            dbc.Button("Import Symbols", id='import-symbols-btn',
+                                     size="sm", color="info", outline=True)
+                        ])
+                    ])
+                ], width=4),
+                
+                # Execution Controls
+                dbc.Col([
+                    dbc.Card([
+                        dbc.CardHeader("⚙️ Execution Controls"),
+                        dbc.CardBody([
+                            html.Label("Exit Rules:", className="fw-bold"),
+                            dcc.Checklist(
+                                id='exit-rules-checklist',
+                                options=[
+                                    {'label': 'Default', 'value': 'default'},
+                                    {'label': 'Trailing Stop', 'value': 'trailing_stop'},
+                                    {'label': 'Profit Target', 'value': 'profit_target'}
+                                ],
+                                value=['default'],
+                                className="mb-3"
+                            ),
+                            html.Hr(),
+                            html.Label("Job Summary:", className="fw-bold"),
+                            html.Div(id='job-summary-display', className="mb-3 p-2 bg-light rounded"),
+                            html.Hr(),
+                            dbc.Button(
+                                "🚀 Launch Batch Backtest",
+                                id='launch-batch-btn',
+                                color="success",
+                                size="lg",
+                                className="w-100 mb-2"
+                            ),
+                            dbc.Progress(
+                                id='batch-progress-bar',
+                                value=0,
+                                className="mb-2",
+                                style={'display': 'none'}
+                            ),
+                            html.Div(id='batch-status-display', className="small")
+                        ])
+                    ])
+                ], width=4)
+            ], className="mb-4"),
+            
+            # Group Set Management
+            dbc.Row([
+                dbc.Col([
+                    dbc.Card([
+                        dbc.CardHeader("💾 Group Set Management"),
+                        dbc.CardBody([
+                            dbc.Row([
+                                dbc.Col([
+                                    dcc.Input(
+                                        id='group-set-name-input',
+                                        type='text',
+                                        placeholder='Group set name (e.g., My S&P500 Momentum)',
+                                        className="form-control"
+                                    )
+                                ], width=8),
+                                dbc.Col([
+                                    dbc.ButtonGroup([
+                                        dbc.Button("Save", id='save-group-set-btn', 
+                                                 color="primary", size="sm"),
+                                        dbc.Button("Load", id='load-group-set-btn', 
+                                                 color="secondary", size="sm")
+                                    ], className="w-100")
+                                ], width=4)
+                            ]),
+                            html.Div(id='group-set-status', className="mt-2 small")
+                        ])
+                    ])
+                ], width=12)
+            ], className="mb-4"),
+            
+            # Results Section
+            dbc.Row([
+                dbc.Col([
+                    dbc.Card([
+                        dbc.CardHeader([
+                            dbc.Row([
+                                dbc.Col([
+                                    html.H5("📊 Backtest Results", className="mb-0")
+                                ], width=6),
+                                dbc.Col([
+                                    dbc.ButtonGroup([
+                                        dbc.Button("By Strategy", id='view-by-strategy-btn',
+                                                 color="primary", size="sm", outline=True),
+                                        dbc.Button("By Symbol", id='view-by-symbol-btn',
+                                                 color="primary", size="sm", outline=True),
+                                        dbc.Button("Export CSV", id='export-csv-btn',
+                                                 color="success", size="sm", outline=True),
+                                        dbc.Button("Export XLSX", id='export-xlsx-btn',
+                                                 color="success", size="sm", outline=True)
+                                    ], className="float-end")
+                                ], width=6)
+                            ], align="center")
+                        ]),
+                        dbc.CardBody([
+                            dcc.Loading(
+                                id='results-loading',
+                                children=html.Div(id='results-display'),
+                                type='default'
+                            )
+                        ])
+                    ])
+                ], width=12)
+            ], className="mb-4"),
+            
+            # Trade Details Modal
+            dbc.Modal([
+                dbc.ModalHeader(dbc.ModalTitle(id='trade-modal-title')),
+                dbc.ModalBody(id='trade-modal-body'),
+                dbc.ModalFooter(
+                    dbc.Button("Close", id='close-trade-modal-btn', className="ml-auto")
+                )
+            ], id='trade-details-modal', size='xl', scrollable=True),
+            
+            # Hidden stores for state management
+            dcc.Store(id='batch-results-store'),
+            dcc.Store(id='current-view-mode', data='strategy'),
+            dcc.Download(id='download-results')
+        ], fluid=True)
+    
+    def setup_callbacks(self, app):
+        """
+        Setup all callbacks for the Backtest Manager UI.
+        
+        Args:
+            app: Dash app instance
+        """
+        
+        @app.callback(
+            Output('symbol-checklist-container', 'children'),
+            [Input('symbol-search-input', 'value'),
+             Input('import-symbols-btn', 'n_clicks')],
+            [State('bulk-symbol-input', 'value')]
+        )
+        def update_symbol_checklist(search_term, import_clicks, bulk_input):
+            """Update symbol checklist based on search and bulk import."""
+            ctx = callback_context
+            
+            # Get available symbols
+            all_symbols = self.indicator_engine.list_available_symbols()
+            
+            if not all_symbols:
+                return html.P("No symbols available. Please compute indicators first.",
+                            className="text-warning")
+            
+            # Handle bulk import
+            if ctx.triggered and ctx.triggered[0]['prop_id'] == 'import-symbols-btn.n_clicks':
+                if bulk_input:
+                    # Parse bulk input
+                    imported_symbols = []
+                    for line in bulk_input.replace(',', '\n').split('\n'):
+                        symbol = line.strip().upper()
+                        if symbol and symbol in all_symbols:
+                            imported_symbols.append(symbol)
+                    
+                    # Filter to imported symbols
+                    all_symbols = imported_symbols
+            
+            # Apply search filter
+            if search_term:
+                search_term = search_term.upper()
+                all_symbols = [s for s in all_symbols if search_term in s]
+            
+            # Create checklist
+            return dcc.Checklist(
+                id='batch-symbol-checklist',
+                options=[{'label': s, 'value': s} for s in sorted(all_symbols)],
+                value=[],
+                className="small"
+            )
+        
+        @app.callback(
+            Output('batch-symbol-checklist', 'value'),
+            [Input('select-all-symbols-btn', 'n_clicks'),
+             Input('clear-symbols-btn', 'n_clicks')],
+            [State('batch-symbol-checklist', 'options')]
+        )
+        def toggle_symbol_selection(select_all, clear, options):
+            """Toggle symbol selection."""
+            ctx = callback_context
+            if not ctx.triggered or not options:
+                return []
+            
+            button_id = ctx.triggered[0]['prop_id'].split('.')[0]
+            
+            if button_id == 'select-all-symbols-btn':
+                return [opt['value'] for opt in options]
+            elif button_id == 'clear-symbols-btn':
+                return []
+            
+            return []
+        
+        @app.callback(
+            Output('batch-strategy-checklist', 'value'),
+            [Input('select-all-strategies-btn', 'n_clicks'),
+             Input('clear-strategies-btn', 'n_clicks')],
+            [State('batch-strategy-checklist', 'options')]
+        )
+        def toggle_strategy_selection(select_all, clear, options):
+            """Toggle strategy selection."""
+            ctx = callback_context
+            if not ctx.triggered or not options:
+                return []
+            
+            button_id = ctx.triggered[0]['prop_id'].split('.')[0]
+            
+            if button_id == 'select-all-strategies-btn':
+                return [opt['value'] for opt in options]
+            elif button_id == 'clear-strategies-btn':
+                return []
+            
+            return []
+        
+        @app.callback(
+            Output('strategy-params-display', 'children'),
+            Input('batch-strategy-checklist', 'value')
+        )
+        def display_strategy_params(selected_strategies):
+            """Display parameter sets for selected strategies."""
+            if not selected_strategies:
+                return html.P("No strategies selected", className="text-muted small")
+            
+            params_display = []
+            for strategy_id in selected_strategies:
+                strategy_info = self.available_strategies.get(strategy_id, {})
+                params_list = strategy_info.get('params', [])
+                
+                params_display.append(
+                    html.Div([
+                        html.Strong(f"{strategy_info.get('name', strategy_id)}:"),
+                        html.Ul([
+                            html.Li(str(params)) for params in params_list
+                        ], className="mb-2")
+                    ])
+                )
+            
+            return params_display
+        
+        @app.callback(
+            Output('job-summary-display', 'children'),
+            [Input('batch-strategy-checklist', 'value'),
+             Input('batch-symbol-checklist', 'value'),
+             Input('exit-rules-checklist', 'value')]
+        )
+        def update_job_summary(strategies, symbols, exit_rules):
+            """Update job summary statistics."""
+            if not strategies or not symbols or not exit_rules:
+                return html.P("Configure selections to see job summary", 
+                            className="text-muted small")
+            
+            # Calculate total jobs
+            total_param_sets = sum(
+                len(self.available_strategies.get(s, {}).get('params', []))
+                for s in strategies
+            )
+            total_jobs = len(symbols) * total_param_sets * len(exit_rules)
+            
+            return html.Div([
+                html.P([html.Strong("Strategies: "), f"{len(strategies)} ({total_param_sets} param sets)"], 
+                      className="mb-1 small"),
+                html.P([html.Strong("Symbols: "), f"{len(symbols)}"], 
+                      className="mb-1 small"),
+                html.P([html.Strong("Exit Rules: "), f"{len(exit_rules)}"], 
+                      className="mb-1 small"),
+                html.Hr(className="my-2"),
+                html.P([html.Strong("Total Jobs: "), html.Span(f"{total_jobs}", 
+                      className="badge bg-primary")], className="mb-0")
+            ])
+        
+        @app.callback(
+            [Output('batch-results-store', 'data'),
+             Output('batch-progress-bar', 'value'),
+             Output('batch-progress-bar', 'style'),
+             Output('batch-status-display', 'children')],
+            Input('launch-batch-btn', 'n_clicks'),
+            [State('batch-strategy-checklist', 'value'),
+             State('batch-symbol-checklist', 'value'),
+             State('exit-rules-checklist', 'value')],
+            prevent_initial_call=True
+        )
+        def launch_batch_backtest(n_clicks, strategies, symbols, exit_rules):
+            """Launch batch backtest execution."""
+            if not n_clicks or not strategies or not symbols:
+                return None, 0, {'display': 'none'}, ""
+            
+            # Prepare strategy configurations
+            strategy_configs = []
+            for strategy_id in strategies:
+                strategy_info = self.available_strategies.get(strategy_id, {})
+                params_list = strategy_info.get('params', [])
+                
+                for params in params_list:
+                    strategy_configs.append(
+                        StrategyConfig(name=strategy_id, params=params)
+                    )
+            
+            # Progress tracking
+            progress_messages = []
+            
+            def progress_callback(current, total, message):
+                progress_messages.append(message)
+            
+            # Run batch backtests
+            results_df, job_stats = self.backtest_engine.run_batch_backtests(
+                symbols=symbols,
+                strategy_configs=strategy_configs,
+                exit_rules=exit_rules if exit_rules else ['default'],
+                progress_callback=progress_callback
+            )
+            
+            # Store results
+            results_data = results_df.to_dict('records') if len(results_df) > 0 else []
+            
+            # Create status message
+            status_msg = html.Div([
+                html.P(f"✅ Batch backtest completed!", className="text-success fw-bold"),
+                html.P(f"Total: {job_stats['total_jobs']} | "
+                      f"Completed: {job_stats['completed']} | "
+                      f"Errors: {job_stats['errors']}", className="small mb-0")
+            ])
+            
+            return results_data, 100, {'display': 'block'}, status_msg
+        
+        @app.callback(
+            Output('current-view-mode', 'data'),
+            [Input('view-by-strategy-btn', 'n_clicks'),
+             Input('view-by-symbol-btn', 'n_clicks')]
+        )
+        def toggle_view_mode(by_strategy_clicks, by_symbol_clicks):
+            """Toggle between strategy and symbol view modes."""
+            ctx = callback_context
+            if not ctx.triggered:
+                return 'strategy'
+            
+            button_id = ctx.triggered[0]['prop_id'].split('.')[0]
+            
+            if button_id == 'view-by-strategy-btn':
+                return 'strategy'
+            elif button_id == 'view-by-symbol-btn':
+                return 'symbol'
+            
+            return 'strategy'
+        
+        @app.callback(
+            Output('results-display', 'children'),
+            [Input('batch-results-store', 'data'),
+             Input('current-view-mode', 'data')]
+        )
+        def display_results(results_data, view_mode):
+            """Display backtest results in grouped tables."""
+            if not results_data:
+                return html.P("No results yet. Configure and launch a batch backtest.", 
+                            className="text-muted")
+            
+            results_df = pd.DataFrame(results_data)
+            
+            if len(results_df) == 0:
+                return html.P("No successful backtests in this batch.", 
+                            className="text-warning")
+            
+            # Group by strategy or symbol
+            if view_mode == 'strategy':
+                return self._create_strategy_grouped_view(results_df)
+            else:
+                return self._create_symbol_grouped_view(results_df)
+        
+        @app.callback(
+            [Output('download-results', 'data'),
+             Output('download-results', 'filename')],
+            [Input('export-csv-btn', 'n_clicks'),
+             Input('export-xlsx-btn', 'n_clicks')],
+            [State('batch-results-store', 'data')],
+            prevent_initial_call=True
+        )
+        def export_results(csv_clicks, xlsx_clicks, results_data):
+            """Export results to CSV or XLSX."""
+            ctx = callback_context
+            if not ctx.triggered or not results_data:
+                return None, None
+            
+            button_id = ctx.triggered[0]['prop_id'].split('.')[0]
+            results_df = pd.DataFrame(results_data)
+            
+            if button_id == 'export-csv-btn':
+                return dcc.send_data_frame(results_df.to_csv, "backtest_results.csv", index=False)
+            elif button_id == 'export-xlsx-btn':
+                return dcc.send_data_frame(results_df.to_excel, "backtest_results.xlsx", index=False)
+            
+            return None, None
+        
+        @app.callback(
+            Output('group-set-status', 'children'),
+            [Input('save-group-set-btn', 'n_clicks'),
+             Input('load-group-set-btn', 'n_clicks')],
+            [State('group-set-name-input', 'value'),
+             State('batch-strategy-checklist', 'value'),
+             State('batch-symbol-checklist', 'value'),
+             State('exit-rules-checklist', 'value')],
+            prevent_initial_call=True
+        )
+        def manage_group_sets(save_clicks, load_clicks, group_name, strategies, symbols, exit_rules):
+            """Save or load group sets."""
+            ctx = callback_context
+            if not ctx.triggered or not group_name:
+                return html.P("Enter a group set name", className="text-muted")
+            
+            button_id = ctx.triggered[0]['prop_id'].split('.')[0]
+            
+            if button_id == 'save-group-set-btn':
+                if not strategies or not symbols:
+                    return html.P("⚠️ Select strategies and symbols to save", 
+                                className="text-warning")
+                
+                # Prepare params list
+                params_list = []
+                for strategy_id in strategies:
+                    strategy_info = self.available_strategies.get(strategy_id, {})
+                    params_list.extend(strategy_info.get('params', []))
+                
+                # Save to store
+                self.backtest_engine.store.save_group_set(
+                    name=group_name,
+                    symbols=symbols,
+                    strategies=strategies,
+                    params_list=params_list,
+                    exit_rules=exit_rules if exit_rules else ['default']
+                )
+                
+                return html.P(f"✅ Group set '{group_name}' saved successfully", 
+                            className="text-success")
+            
+            elif button_id == 'load-group-set-btn':
+                group_data = self.backtest_engine.store.load_group_set(group_name)
+                
+                if not group_data:
+                    return html.P(f"⚠️ Group set '{group_name}' not found", 
+                                className="text-warning")
+                
+                return html.P(f"✅ Group set '{group_name}' loaded successfully", 
+                            className="text-success")
+            
+            return ""
+    
+    def _create_strategy_grouped_view(self, results_df: pd.DataFrame) -> html.Div:
+        """Create strategy-grouped results view."""
+        grouped_tables = []
+        
+        for strategy in results_df['strategy'].unique():
+            strategy_df = results_df[results_df['strategy'] == strategy]
+            
+            # Calculate summary stats
+            avg_win_rate = strategy_df['win_rate'].mean()
+            avg_sharpe = strategy_df['sharpe_ratio'].mean()
+            avg_cagr = strategy_df['cagr'].mean()
+            total_trades = strategy_df['num_trades'].sum()
+            
+            grouped_tables.append(
+                dbc.Card([
+                    dbc.CardHeader([
+                        html.H5(f"📊 {strategy}", className="mb-0 d-inline"),
+                        html.Span([
+                            f" | Avg Win Rate: {avg_win_rate*100:.1f}% | ",
+                            f"Avg Sharpe: {avg_sharpe:.2f} | ",
+                            f"Avg CAGR: {avg_cagr*100:.1f}% | ",
+                            f"Total Trades: {total_trades}"
+                        ], className="small text-muted ms-3")
+                    ]),
+                    dbc.CardBody([
+                        dash_table.DataTable(
+                            data=strategy_df.to_dict('records'),
+                            columns=[
+                                {'name': 'Symbol', 'id': 'symbol'},
+                                {'name': 'Params', 'id': 'params_str'},
+                                {'name': 'Exit', 'id': 'exit_rule'},
+                                {'name': 'Win Rate', 'id': 'win_rate', 'type': 'numeric',
+                                 'format': {'specifier': '.1%'}},
+                                {'name': 'Trades', 'id': 'num_trades'},
+                                {'name': 'CAGR', 'id': 'cagr', 'type': 'numeric',
+                                 'format': {'specifier': '.1%'}},
+                                {'name': 'Sharpe', 'id': 'sharpe_ratio', 'type': 'numeric',
+                                 'format': {'specifier': '.2f'}},
+                                {'name': 'Max DD', 'id': 'max_drawdown', 'type': 'numeric',
+                                 'format': {'specifier': '.1%'}},
+                                {'name': 'Total Ret', 'id': 'total_return', 'type': 'numeric',
+                                 'format': {'specifier': '.1%'}}
+                            ],
+                            style_table={'overflowX': 'auto'},
+                            style_cell={
+                                'textAlign': 'left',
+                                'padding': '8px',
+                                'fontSize': '13px',
+                                'minWidth': '80px'
+                            },
+                            style_header={
+                                'backgroundColor': 'rgb(230, 230, 230)',
+                                'fontWeight': 'bold',
+                                'fontSize': '12px'
+                            },
+                            style_data_conditional=[
+                                {
+                                    'if': {'row_index': 'odd'},
+                                    'backgroundColor': 'rgb(248, 248, 248)'
+                                },
+                                {
+                                    'if': {
+                                        'filter_query': '{sharpe_ratio} > 1',
+                                        'column_id': 'sharpe_ratio'
+                                    },
+                                    'backgroundColor': '#d4edda',
+                                    'color': '#155724'
+                                },
+                                {
+                                    'if': {
+                                        'filter_query': '{win_rate} > 0.6',
+                                        'column_id': 'win_rate'
+                                    },
+                                    'backgroundColor': '#d4edda',
+                                    'color': '#155724'
+                                }
+                            ],
+                            sort_action='native',
+                            filter_action='native',
+                            page_size=20,
+                            row_selectable='single'
+                        )
+                    ])
+                ], className="mb-3")
+            )
+        
+        return html.Div(grouped_tables)
+    
+    def _create_symbol_grouped_view(self, results_df: pd.DataFrame) -> html.Div:
+        """Create symbol-grouped results view."""
+        grouped_tables = []
+        
+        for symbol in results_df['symbol'].unique():
+            symbol_df = results_df[results_df['symbol'] == symbol]
+            
+            # Calculate summary stats
+            avg_win_rate = symbol_df['win_rate'].mean()
+            avg_sharpe = symbol_df['sharpe_ratio'].mean()
+            avg_cagr = symbol_df['cagr'].mean()
+            total_trades = symbol_df['num_trades'].sum()
+            
+            grouped_tables.append(
+                dbc.Card([
+                    dbc.CardHeader([
+                        html.H5(f"📈 {symbol}", className="mb-0 d-inline"),
+                        html.Span([
+                            f" | Avg Win Rate: {avg_win_rate*100:.1f}% | ",
+                            f"Avg Sharpe: {avg_sharpe:.2f} | ",
+                            f"Avg CAGR: {avg_cagr*100:.1f}% | ",
+                            f"Total Trades: {total_trades}"
+                        ], className="small text-muted ms-3")
+                    ]),
+                    dbc.CardBody([
+                        dash_table.DataTable(
+                            data=symbol_df.to_dict('records'),
+                            columns=[
+                                {'name': 'Strategy', 'id': 'strategy'},
+                                {'name': 'Params', 'id': 'params_str'},
+                                {'name': 'Exit', 'id': 'exit_rule'},
+                                {'name': 'Win Rate', 'id': 'win_rate', 'type': 'numeric',
+                                 'format': {'specifier': '.1%'}},
+                                {'name': 'Trades', 'id': 'num_trades'},
+                                {'name': 'CAGR', 'id': 'cagr', 'type': 'numeric',
+                                 'format': {'specifier': '.1%'}},
+                                {'name': 'Sharpe', 'id': 'sharpe_ratio', 'type': 'numeric',
+                                 'format': {'specifier': '.2f'}},
+                                {'name': 'Max DD', 'id': 'max_drawdown', 'type': 'numeric',
+                                 'format': {'specifier': '.1%'}},
+                                {'name': 'Total Ret', 'id': 'total_return', 'type': 'numeric',
+                                 'format': {'specifier': '.1%'}}
+                            ],
+                            style_table={'overflowX': 'auto'},
+                            style_cell={
+                                'textAlign': 'left',
+                                'padding': '8px',
+                                'fontSize': '13px',
+                                'minWidth': '80px'
+                            },
+                            style_header={
+                                'backgroundColor': 'rgb(230, 230, 230)',
+                                'fontWeight': 'bold',
+                                'fontSize': '12px'
+                            },
+                            style_data_conditional=[
+                                {
+                                    'if': {'row_index': 'odd'},
+                                    'backgroundColor': 'rgb(248, 248, 248)'
+                                },
+                                {
+                                    'if': {
+                                        'filter_query': '{sharpe_ratio} > 1',
+                                        'column_id': 'sharpe_ratio'
+                                    },
+                                    'backgroundColor': '#d4edda',
+                                    'color': '#155724'
+                                },
+                                {
+                                    'if': {
+                                        'filter_query': '{win_rate} > 0.6',
+                                        'column_id': 'win_rate'
+                                    },
+                                    'backgroundColor': '#d4edda',
+                                    'color': '#155724'
+                                }
+                            ],
+                            sort_action='native',
+                            filter_action='native',
+                            page_size=20,
+                            row_selectable='single'
+                        )
+                    ])
+                ], className="mb-3")
+            )
+        
+        return html.Div(grouped_tables)

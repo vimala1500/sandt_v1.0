@@ -459,3 +459,107 @@ class BacktestEngine:
         )
         
         return result
+    
+    def run_batch_backtests(
+        self,
+        symbols: List[str],
+        strategy_configs: List[StrategyConfig],
+        exit_rules: List[str] = None,
+        initial_capital: float = 100000.0,
+        progress_callback: Optional[callable] = None
+    ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+        """
+        Run batch backtests for multiple symbols, strategies, and exit rules.
+        
+        Args:
+            symbols: List of stock symbols
+            strategy_configs: List of strategy configurations
+            exit_rules: List of exit rules (optional, defaults to ['default'])
+            initial_capital: Starting capital
+            progress_callback: Optional callback function(current, total, status_msg)
+            
+        Returns:
+            Tuple of (results DataFrame, job statistics dict)
+        """
+        from indicator_engine import IndicatorEngine
+        
+        if exit_rules is None:
+            exit_rules = ['default']
+        
+        # Calculate total jobs
+        total_jobs = len(symbols) * len(strategy_configs) * len(exit_rules)
+        completed = 0
+        errors = 0
+        results = []
+        
+        # Load indicator engine
+        indicator_engine = IndicatorEngine()
+        
+        for symbol in symbols:
+            # Load data with indicators
+            try:
+                data = indicator_engine.load_indicators(symbol)
+                if data is None:
+                    if progress_callback:
+                        progress_callback(completed, total_jobs, 
+                                        f"Skipped {symbol} - no indicator data")
+                    errors += len(strategy_configs) * len(exit_rules)
+                    completed += len(strategy_configs) * len(exit_rules)
+                    continue
+            except Exception as e:
+                if progress_callback:
+                    progress_callback(completed, total_jobs, 
+                                    f"Error loading {symbol}: {str(e)}")
+                errors += len(strategy_configs) * len(exit_rules)
+                completed += len(strategy_configs) * len(exit_rules)
+                continue
+            
+            for config in strategy_configs:
+                for exit_rule in exit_rules:
+                    try:
+                        # Update progress
+                        if progress_callback:
+                            progress_callback(
+                                completed, total_jobs,
+                                f"Running {symbol} - {config.name} - {exit_rule}"
+                            )
+                        
+                        # Run backtest
+                        result = self.run_backtest(
+                            data, config, initial_capital,
+                            symbol=symbol, exit_rule=exit_rule
+                        )
+                        
+                        # Store summary
+                        results.append({
+                            'symbol': symbol,
+                            'strategy': config.name,
+                            'params': config.params,
+                            'params_str': str(config.params),
+                            'exit_rule': exit_rule,
+                            **result['metrics']
+                        })
+                        
+                        completed += 1
+                        
+                    except Exception as e:
+                        if progress_callback:
+                            progress_callback(
+                                completed, total_jobs,
+                                f"Error: {symbol} - {config.name} - {str(e)[:50]}"
+                            )
+                        errors += 1
+                        completed += 1
+        
+        # Create results DataFrame
+        results_df = pd.DataFrame(results)
+        
+        # Job statistics
+        job_stats = {
+            'total_jobs': total_jobs,
+            'completed': completed,
+            'errors': errors,
+            'success_rate': (completed - errors) / total_jobs if total_jobs > 0 else 0
+        }
+        
+        return results_df, job_stats

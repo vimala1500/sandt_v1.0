@@ -444,3 +444,91 @@ class BacktestStore:
             'unique_strategies': df['strategy'].nunique(),
             'storage_size_mb': storage_size / (1024 * 1024)
         }
+    
+    def save_group_set(self, name: str, symbols: List[str], strategies: List[str], 
+                       params_list: List[Dict[str, Any]], exit_rules: List[str]) -> None:
+        """
+        Save a group set (collection of symbol/strategy/params/exit combinations).
+        
+        Args:
+            name: Name for the group set
+            symbols: List of symbols
+            strategies: List of strategy names
+            params_list: List of parameter dictionaries (one per strategy)
+            exit_rules: List of exit rules
+        """
+        # Initialize group sets storage if not exists
+        if 'group_sets' not in self.root:
+            self.root.create_group('group_sets')
+        
+        group_sets = self.root['group_sets']
+        
+        # Create or update group set
+        if name in group_sets:
+            del group_sets[name]
+        
+        group_data = group_sets.create_group(name)
+        group_data.attrs['symbols'] = json.dumps(symbols)
+        group_data.attrs['strategies'] = json.dumps(strategies)
+        group_data.attrs['params_list'] = json.dumps(params_list)
+        group_data.attrs['exit_rules'] = json.dumps(exit_rules)
+        group_data.attrs['created_at'] = datetime.now().isoformat()
+    
+    def load_group_set(self, name: str) -> Optional[Dict[str, Any]]:
+        """
+        Load a saved group set.
+        
+        Args:
+            name: Name of the group set
+            
+        Returns:
+            Dictionary with group set data or None if not found
+        """
+        if 'group_sets' not in self.root:
+            return None
+        
+        group_sets = self.root['group_sets']
+        if name not in group_sets:
+            return None
+        
+        group_data = group_sets[name]
+        return {
+            'name': name,
+            'symbols': json.loads(group_data.attrs['symbols']),
+            'strategies': json.loads(group_data.attrs['strategies']),
+            'params_list': json.loads(group_data.attrs['params_list']),
+            'exit_rules': json.loads(group_data.attrs['exit_rules']),
+            'created_at': group_data.attrs.get('created_at', '')
+        }
+    
+    def list_group_sets(self) -> List[str]:
+        """
+        List all saved group sets.
+        
+        Returns:
+            List of group set names
+        """
+        if 'group_sets' not in self.root:
+            return []
+        
+        return list(self.root['group_sets'].keys())
+    
+    def delete_group_set(self, name: str) -> bool:
+        """
+        Delete a saved group set.
+        
+        Args:
+            name: Name of the group set
+            
+        Returns:
+            True if deleted, False if not found
+        """
+        if 'group_sets' not in self.root:
+            return False
+        
+        group_sets = self.root['group_sets']
+        if name not in group_sets:
+            return False
+        
+        del group_sets[name]
+        return True

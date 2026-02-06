@@ -10,6 +10,7 @@ Features:
 - Professional trade breakdowns
 - CSV/XLSX export
 - Group set management
+- Session management and error handling
 """
 
 import json
@@ -25,6 +26,7 @@ import dash_bootstrap_components as dbc
 from backtest_engine import BacktestEngine
 from strategy import StrategyConfig, StrategyRegistry
 from indicator_engine import IndicatorEngine
+from error_handler import safe_execute, get_user_friendly_error
 
 
 class BacktestManagerUI:
@@ -32,16 +34,23 @@ class BacktestManagerUI:
     Advanced Backtest Manager UI component for Dash application.
     """
     
-    def __init__(self, indicator_engine: IndicatorEngine, backtest_engine: BacktestEngine):
+    def __init__(
+        self,
+        indicator_engine: IndicatorEngine,
+        backtest_engine: BacktestEngine,
+        session_manager=None
+    ):
         """
         Initialize the Backtest Manager UI.
         
         Args:
             indicator_engine: IndicatorEngine instance
             backtest_engine: BacktestEngine instance
+            session_manager: Optional SessionManager instance
         """
         self.indicator_engine = indicator_engine
         self.backtest_engine = backtest_engine
+        self.session_manager = session_manager
         self.strategy_registry = StrategyRegistry()
         
         # Available strategies with default configurations
@@ -416,51 +425,105 @@ class BacktestManagerUI:
             Input('launch-batch-btn', 'n_clicks'),
             [State('batch-strategy-checklist', 'value'),
              State('batch-symbol-checklist', 'value'),
-             State('exit-rules-checklist', 'value')],
+             State('exit-rules-checklist', 'value'),
+             State('session-id-store', 'data')],
             prevent_initial_call=True
         )
-        def launch_batch_backtest(n_clicks, strategies, symbols, exit_rules):
+        def launch_batch_backtest(n_clicks, strategies, symbols, exit_rules, session_id):
             """Launch batch backtest execution."""
             if not n_clicks or not strategies or not symbols:
                 return None, 0, {'display': 'none'}, ""
             
-            # Prepare strategy configurations
-            strategy_configs = []
-            for strategy_id in strategies:
-                strategy_info = self.available_strategies.get(strategy_id, {})
-                params_list = strategy_info.get('params', [])
+            # Update session activity
+            if self.session_manager and session_id:
+                self.session_manager.update_session_activity(session_id)
+            
+            try:
+                # Prepare strategy configurations
+                strategy_configs = []
+                for strategy_id in strategies:
+                    strategy_info = self.available_strategies.get(strategy_id, {})
+                    params_list = strategy_info.get('params', [])
+                    
+                    for params in params_list:
+                        strategy_configs.append(
+                            StrategyConfig(name=strategy_id, params=params)
+                        )
                 
-                for params in params_list:
-                    strategy_configs.append(
-                        StrategyConfig(name=strategy_id, params=params)
+                # Progress tracking
+                progress_messages = []
+                
+                def progress_callback(current, total, message):
+                    progress_messages.append(message)
+                
+                # Run batch backtests with error handling
+                success, result, error_msg = safe_execute(
+                    self.backtest_engine.run_batch_backtests,
+                    symbols=symbols,
+                    strategy_configs=strategy_configs,
+                    exit_rules=exit_rules if exit_rules else ['default'],
+                    progress_callback=progress_callback,
+                    error_message="Batch backtest execution failed"
+                )
+                
+                if not success:
+                    # Record error in session
+                    if self.session_manager and session_id:
+                        self.session_manager.record_session_error(
+                            session_id,
+                            f"Batch backtest error: {error_msg}"
+                        )
+                    
+                    # Return error status
+                    status_msg = dbc.Alert([
+                        html.P("❌ Batch backtest failed!", className="text-danger fw-bold"),
+                        html.P(error_msg or "Unknown error occurred"),
+                        html.Hr(),
+                        html.Small([
+                            html.Strong("Recovery steps:"),
+                            html.Ul([
+                                html.Li("Verify data is loaded for selected symbols"),
+                                html.Li("Try with fewer symbols or strategies"),
+                                html.Li("Check system resources and refresh if needed"),
+                                html.Li("Review browser console for detailed errors")
+                            ])
+                        ])
+                    ], color="danger")
+                    
+                    return None, 0, {'display': 'none'}, status_msg
+                
+                # Success - unpack results
+                results_df, job_stats = result
+                
+                # Store results
+                results_data = results_df.to_dict('records') if len(results_df) > 0 else []
+                
+                # Create status message
+                status_msg = html.Div([
+                    html.P(f"✅ Batch backtest completed!", className="text-success fw-bold"),
+                    html.P(f"Total: {job_stats['total_jobs']} | "
+                          f"Completed: {job_stats['completed']} | "
+                          f"Errors: {job_stats['errors']}", className="small mb-0")
+                ])
+                
+                return results_data, 100, {'display': 'block'}, status_msg
+                
+            except Exception as e:
+                # Fallback error handling
+                error_msg = get_user_friendly_error(e)
+                
+                if self.session_manager and session_id:
+                    self.session_manager.record_session_error(
+                        session_id,
+                        f"Batch backtest exception: {str(e)}"
                     )
-            
-            # Progress tracking
-            progress_messages = []
-            
-            def progress_callback(current, total, message):
-                progress_messages.append(message)
-            
-            # Run batch backtests
-            results_df, job_stats = self.backtest_engine.run_batch_backtests(
-                symbols=symbols,
-                strategy_configs=strategy_configs,
-                exit_rules=exit_rules if exit_rules else ['default'],
-                progress_callback=progress_callback
-            )
-            
-            # Store results
-            results_data = results_df.to_dict('records') if len(results_df) > 0 else []
-            
-            # Create status message
-            status_msg = html.Div([
-                html.P(f"✅ Batch backtest completed!", className="text-success fw-bold"),
-                html.P(f"Total: {job_stats['total_jobs']} | "
-                      f"Completed: {job_stats['completed']} | "
-                      f"Errors: {job_stats['errors']}", className="small mb-0")
-            ])
-            
-            return results_data, 100, {'display': 'block'}, status_msg
+                
+                status_msg = dbc.Alert([
+                    html.P("❌ Unexpected error occurred!", className="fw-bold"),
+                    html.P(error_msg)
+                ], color="danger")
+                
+                return None, 0, {'display': 'none'}, status_msg
         
         @app.callback(
             Output('current-view-mode', 'data'),

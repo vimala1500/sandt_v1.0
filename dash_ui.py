@@ -11,12 +11,20 @@ from dash.dependencies import Input, Output, State
 import dash_bootstrap_components as dbc
 import plotly.graph_objs as go
 import pandas as pd
+import uuid
 from typing import Optional
 
 from scanner import Scanner
 from indicator_engine import IndicatorEngine
 from backtest_engine import BacktestEngine
 from backtest_manager_ui import BacktestManagerUI
+from session_manager import get_session_manager, SessionManager
+from error_handler import (
+    with_error_handling,
+    safe_execute,
+    handle_callback_error,
+    ApplicationError
+)
 
 # Data path options to check for price data
 DEFAULT_DATA_PATHS = ['./data/prices', './data/stock_data', '../data/prices']
@@ -46,15 +54,24 @@ class DashUI:
             indicator_path: Path to indicator storage
             backtest_path: Path to backtest results
         """
+        # Initialize session manager
+        self.session_manager = get_session_manager()
+        self.session_id = str(uuid.uuid4())
+        self.session_manager.create_session(
+            self.session_id,
+            metadata={'type': 'dash_ui', 'indicator_path': indicator_path}
+        )
+        
         # Initialize engines
         self.indicator_engine = IndicatorEngine(indicator_path)
         self.backtest_engine = BacktestEngine(backtest_path)
         self.scanner = Scanner(self.indicator_engine, self.backtest_engine)
         
-        # Initialize Backtest Manager UI
+        # Initialize Backtest Manager UI with session manager
         self.backtest_manager = BacktestManagerUI(
             self.indicator_engine, 
-            self.backtest_engine
+            self.backtest_engine,
+            session_manager=self.session_manager
         )
         
         # Initialize Dash app
@@ -70,6 +87,19 @@ class DashUI:
     def _setup_layout(self):
         """Setup the UI layout."""
         self.app.layout = dbc.Container([
+            # Session status banner
+            html.Div(id='session-status-banner', className="mb-3"),
+            
+            # Hidden interval for health checks
+            dcc.Interval(
+                id='health-check-interval',
+                interval=30*1000,  # Check every 30 seconds
+                n_intervals=0
+            ),
+            
+            # Hidden store for session ID
+            dcc.Store(id='session-id-store', data=self.session_id),
+            
             dbc.Row([
                 dbc.Col([
                     html.H1("Stock Scanner & Backtest Analyzer", className="text-center mb-4"),
@@ -379,6 +409,49 @@ class DashUI:
         # Setup Backtest Manager callbacks
         self.backtest_manager.setup_callbacks(self.app)
         
+        # Health check callback
+        @self.app.callback(
+            Output('session-status-banner', 'children'),
+            [Input('health-check-interval', 'n_intervals'),
+             Input('session-id-store', 'data')]
+        )
+        def check_session_health(n_intervals, session_id):
+            """Periodic health check of the session."""
+            if not session_id:
+                return None
+            
+            # Update session activity
+            self.session_manager.update_session_activity(session_id)
+            
+            # Check health
+            health_status = self.session_manager.check_health(session_id)
+            
+            # Only show banner if there's an issue
+            if not health_status.get('healthy', True):
+                message = self.session_manager.get_user_friendly_message(health_status)
+                recovery = self.session_manager.get_recovery_instructions(health_status)
+                
+                severity_map = {
+                    'error': 'danger',
+                    'warning': 'warning',
+                    'expired': 'warning',
+                    'disconnected': 'warning',
+                    'failed': 'danger'
+                }
+                
+                status_type = health_status.get('status', 'error')
+                alert_color = severity_map.get(status_type, 'warning')
+                
+                banner = dbc.Alert([
+                    html.Div(message),
+                    html.Hr() if recovery else None,
+                    html.Small(recovery, style={'whiteSpace': 'pre-line'}) if recovery else None
+                ], color=alert_color, dismissable=True, className="mb-3")
+                
+                return banner
+            
+            return None
+        
         @self.app.callback(
             [Output('rsi-controls', 'style'),
              Output('ma-controls', 'style'),
@@ -472,14 +545,19 @@ class DashUI:
              State('streak-threshold', 'value'),
              State('custom-indicator', 'value'),
              State('custom-operator', 'value'),
-             State('custom-threshold', 'value')]
+             State('custom-threshold', 'value'),
+             State('session-id-store', 'data')]
         )
         def run_scan(n_clicks, scan_type, rsi_period, rsi_threshold, fast_ma, slow_ma,
                      pattern_type, streak_type, streak_threshold, 
-                     custom_indicator, custom_operator, custom_threshold):
+                     custom_indicator, custom_operator, custom_threshold, session_id):
             """Run the selected scan."""
             if n_clicks is None:
                 return html.P("Configure scan and click 'Run Scan'"), ""
+            
+            # Update session activity
+            if session_id:
+                self.session_manager.update_session_activity(session_id)
             
             try:
                 # Get available symbols
@@ -564,7 +642,33 @@ class DashUI:
                 return table, html.P(status, className="text-success")
             
             except Exception as e:
-                return html.P(f"Error: {str(e)}"), html.P(str(e), className="text-danger")
+                # Record error in session
+                if session_id:
+                    self.session_manager.record_session_error(
+                        session_id,
+                        f"Scanner error: {str(e)}"
+                    )
+                
+                # Format user-friendly error message
+                from error_handler import get_user_friendly_error
+                error_msg = get_user_friendly_error(e)
+                
+                error_display = dbc.Alert([
+                    html.H5("⚠️ Scan Error", className="alert-heading"),
+                    html.P(error_msg),
+                    html.Hr(),
+                    html.P([
+                        html.Strong("Suggestions:"),
+                        html.Ul([
+                            html.Li("Refresh the page to restart your session"),
+                            html.Li("Ensure data is properly loaded for the selected symbols"),
+                            html.Li("Try a different scan type or parameters"),
+                            html.Li("Check the browser console for detailed error information")
+                        ])
+                    ], className="mb-0 small")
+                ], color="danger")
+                
+                return error_display, html.P("Scan failed", className="text-danger")
         
         @self.app.callback(
             Output('backtest-summary-div', 'children'),

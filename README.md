@@ -34,6 +34,12 @@ A complete, modular stock analysis and backtesting system with web UI. Features 
   - **Momentum Indicators**: Consecutive higher/lower streaks
   - **High/Low Tracking**: Days since previous high/low
   - **Traditional Indicators**: SMA and RSI with configurable periods
+- **🆕 Session Management & Error Handling**: Robust session lifecycle management (See [SESSION_MANAGEMENT_GUIDE.md](SESSION_MANAGEMENT_GUIDE.md))
+  - Automatic health monitoring with 30-minute timeout
+  - User-friendly error messages with recovery instructions
+  - Retry strategy for transient errors
+  - Visual session status indicators in UI
+  - Graceful handling of connection issues
 - **🆕 Dynamic RSI Period Caching**: Scan with ANY RSI period - automatically computed and cached on-demand (See [DYNAMIC_RSI_CACHING.md](DYNAMIC_RSI_CACHING.md))
 - **🆕 Universal Indicator Scanner**: Filter stocks by ANY indicator with flexible operators (>, <, ==, etc.)
   - Candlestick pattern scanning

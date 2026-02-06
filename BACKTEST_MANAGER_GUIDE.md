@@ -323,21 +323,131 @@ store.delete_group_set("Old Configuration")
 - Try alternative export format (CSV vs XLSX)
 - Check disk space availability
 
+## Trade-by-Trade Analysis
+
+### Overview
+
+When you click on any row in the batch backtest results tables, a detailed modal opens displaying comprehensive trade-by-trade analysis for that specific backtest run.
+
+### Features
+
+#### 1. Summary Metrics Card
+Displays key performance indicators:
+- **Win Rate**: Percentage of profitable trades
+- **Total Trades**: Number of trades executed
+- **CAGR**: Compound Annual Growth Rate
+- **Sharpe Ratio**: Risk-adjusted return measure
+- **Max Drawdown**: Largest peak-to-trough decline
+- **Total Return**: Overall percentage return
+- **Expectancy**: Average return per trade
+
+#### 2. Trade Statistics Card
+Advanced trading metrics:
+- **Winning Trades**: Count of profitable trades
+- **Losing Trades**: Count of unprofitable trades
+- **Average Win**: Mean return of winning trades
+- **Average Loss**: Mean loss of losing trades
+- **Profit Factor**: Ratio of average win to average loss
+- **Average Holding Period**: Mean number of days per trade
+
+#### 3. Equity Curve Visualization
+Interactive Plotly chart showing:
+- Portfolio equity over time
+- Visual representation of strategy performance
+- Hover details for specific dates
+
+#### 4. Trade P&L Distribution
+Histogram chart displaying:
+- Distribution of trade returns
+- Frequency of gains vs losses
+- Visual representation of trade outcomes
+
+#### 5. Drawdown Chart
+Time-series plot showing:
+- Drawdown percentage over time
+- Peak-to-trough declines
+- Recovery periods
+
+#### 6. Trade-by-Trade Table
+Comprehensive table with all trade details:
+
+**Columns:**
+- **Trade No.**: Sequential trade number
+- **Entry Date**: Date position was opened
+- **Entry Price**: Price at entry
+- **Exit Date**: Date position was closed
+- **Exit Price**: Price at exit
+- **Position**: Type (Long/Short)
+- **Size**: Number of shares/units
+- **Holding Period**: Days in position
+- **P&L %**: Percentage profit/loss
+- **P&L $**: Dollar profit/loss
+- **MAE**: Maximum Adverse Excursion (worst drawdown during trade)
+- **MFE**: Maximum Favorable Excursion (best gain during trade)
+- **Exit Reason**: Why trade was closed (Signal Exit, Signal Reversal, End of Period)
+- **Comments**: Additional notes (customizable)
+
+**Table Features:**
+- **Sortable**: Click column headers to sort
+- **Filterable**: Use filter inputs to find specific trades
+- **Exportable**: Built-in CSV export functionality
+- **Color-coded**: Profitable trades in green, losses in red
+- **Paginated**: 20 trades per page for easy navigation
+
+### Usage
+
+1. **Access Trade Details**
+   - Run a batch backtest as usual
+   - View results in strategy-grouped or symbol-grouped view
+   - Click on any row in the results table
+   - Trade details modal opens automatically
+
+2. **Analyze Trades**
+   - Review summary metrics for overall performance
+   - Check trade statistics for win/loss patterns
+   - Examine equity curve for growth trajectory
+   - Study P&L distribution for consistency
+   - Review drawdown chart for risk assessment
+   - Drill down into individual trades in the table
+
+3. **Export Trade Data**
+   - Use table's built-in export for filtered data
+   - Save for further analysis in Excel or other tools
+
+4. **Close Modal**
+   - Click "Close" button to return to results
+   - Click another row to view different backtest
+
+### Best Practices
+
+#### Trade Analysis
+- **Focus on MAE/MFE**: Understand how much pain/pleasure each trade experienced
+- **Review Exit Reasons**: Identify if exits are timely or premature
+- **Check Holding Periods**: Ensure trades align with strategy timeframe
+- **Study Outliers**: Examine best and worst trades for patterns
+
+#### Performance Assessment
+- **Win Rate Context**: High win rate with low profit factor may indicate cutting winners short
+- **Expectancy**: Positive expectancy is crucial for long-term profitability
+- **Drawdown Recovery**: Assess how quickly strategy recovers from drawdowns
+- **Equity Curve Smoothness**: Smoother curves indicate more consistent performance
+
+#### Risk Management
+- **MAE Analysis**: Identify optimal stop-loss levels
+- **Trade Size**: Ensure position sizing is appropriate for account
+- **Drawdown Tolerance**: Verify max drawdown is acceptable
+- **Holding Period Distribution**: Check if aligned with market conditions
+
 ## Future Enhancements
 
 Planned features for future releases:
 
-1. **Detailed Trade Breakdown**
-   - Individual trade entry/exit visualization
-   - Trade-by-trade P&L analysis
-   - Position sizing details
+1. **Enhanced Trade Visualizations**
+   - Price chart with entry/exit markers overlaid
+   - Trade duration heatmap
+   - Win/loss streak analysis
 
-2. **Interactive Equity Curves**
-   - Plotly-based equity curve visualization
-   - Drawdown analysis charts
-   - Comparison overlays
-
-3. **Advanced Filtering**
+2. **Advanced Filtering**
    - Multi-criteria result filtering
    - Saved filter presets
    - Custom metric calculations

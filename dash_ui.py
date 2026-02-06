@@ -261,6 +261,65 @@ class DashUI:
                 ], width=9)
             ], className="mb-4"),
             
+            # Backtest Controls Section
+            dbc.Row([
+                dbc.Col([
+                    dbc.Card([
+                        dbc.CardHeader("Backtest Manager"),
+                        dbc.CardBody([
+                            dbc.Row([
+                                dbc.Col([
+                                    dbc.Label("Strategy:"),
+                                    dcc.Dropdown(
+                                        id='backtest-strategy',
+                                        options=[
+                                            {'label': 'RSI Mean Reversion', 'value': 'rsi_meanrev'},
+                                            {'label': 'MA Crossover', 'value': 'ma_crossover'}
+                                        ],
+                                        value='rsi_meanrev',
+                                        className="mb-2"
+                                    ),
+                                ], width=6),
+                                dbc.Col([
+                                    dbc.Label("Symbol:"),
+                                    dcc.Input(
+                                        id='backtest-symbol',
+                                        type='text',
+                                        placeholder='Enter symbol',
+                                        className="form-control mb-2"
+                                    ),
+                                ], width=6)
+                            ]),
+                            html.Div(id='backtest-params-div', children=[
+                                dbc.Label("Parameters (JSON):"),
+                                dcc.Textarea(
+                                    id='backtest-params',
+                                    placeholder='{"rsi_period": 14, "oversold": 30, "overbought": 70}',
+                                    className="form-control mb-2",
+                                    style={'height': '80px'}
+                                )
+                            ]),
+                            dbc.Button(
+                                "🚀 Run Backtest",
+                                id='run-backtest-btn',
+                                color="success",
+                                className="w-100 mt-2"
+                            ),
+                            html.Div(id='backtest-status', className="mt-2")
+                        ])
+                    ])
+                ], width=3),
+                
+                dbc.Col([
+                    dbc.Card([
+                        dbc.CardHeader("Backtest Details"),
+                        dbc.CardBody([
+                            html.Div(id='backtest-details-div')
+                        ])
+                    ])
+                ], width=9)
+            ], className="mb-4"),
+            
             dbc.Row([
                 dbc.Col([
                     dbc.Card([
@@ -613,6 +672,134 @@ class DashUI:
                 return html.Span(f"✅ {len(available)} symbols", className="badge bg-success")
             except Exception as e:
                 return html.Span(f"❌ Error: {str(e)}", className="badge bg-danger")
+        
+        @self.app.callback(
+            [Output('backtest-details-div', 'children'),
+             Output('backtest-status', 'children')],
+            Input('run-backtest-btn', 'n_clicks'),
+            [State('backtest-symbol', 'value'),
+             State('backtest-strategy', 'value'),
+             State('backtest-params', 'value')]
+        )
+        def run_manual_backtest(n_clicks, symbol, strategy, params_json):
+            """Run a manual backtest for selected symbol/strategy/params."""
+            if n_clicks is None or not symbol:
+                return html.Div(), ""
+            
+            try:
+                # Parse parameters
+                import json
+                if params_json:
+                    try:
+                        params = json.loads(params_json)
+                    except json.JSONDecodeError:
+                        return html.Div(), html.Div("Invalid JSON parameters", className="text-danger")
+                else:
+                    # Use default params based on strategy
+                    if strategy == 'rsi_meanrev':
+                        params = {'rsi_period': 14, 'oversold': 30, 'overbought': 70}
+                    else:
+                        params = {'fast_period': 20, 'slow_period': 50}
+                
+                # Run backtest
+                result = self.backtest_engine.run_single_backtest(
+                    symbol=symbol,
+                    strategy_name=strategy,
+                    params=params
+                )
+                
+                # Create metrics display
+                metrics = result['metrics']
+                
+                metrics_cards = dbc.Row([
+                    dbc.Col([
+                        dbc.Card([
+                            dbc.CardBody([
+                                html.H6("Win Rate", className="text-muted"),
+                                html.H4(f"{metrics['win_rate']*100:.1f}%")
+                            ])
+                        ], className="mb-2")
+                    ], width=4),
+                    dbc.Col([
+                        dbc.Card([
+                            dbc.CardBody([
+                                html.H6("Num Trades", className="text-muted"),
+                                html.H4(f"{metrics['num_trades']}")
+                            ])
+                        ], className="mb-2")
+                    ], width=4),
+                    dbc.Col([
+                        dbc.Card([
+                            dbc.CardBody([
+                                html.H6("Sharpe Ratio", className="text-muted"),
+                                html.H4(f"{metrics['sharpe_ratio']:.2f}")
+                            ])
+                        ], className="mb-2")
+                    ], width=4),
+                    dbc.Col([
+                        dbc.Card([
+                            dbc.CardBody([
+                                html.H6("CAGR", className="text-muted"),
+                                html.H4(f"{metrics['cagr']*100:.1f}%")
+                            ])
+                        ], className="mb-2")
+                    ], width=4),
+                    dbc.Col([
+                        dbc.Card([
+                            dbc.CardBody([
+                                html.H6("Max Drawdown", className="text-muted"),
+                                html.H4(f"{metrics['max_drawdown']*100:.1f}%", className="text-danger")
+                            ])
+                        ], className="mb-2")
+                    ], width=4),
+                    dbc.Col([
+                        dbc.Card([
+                            dbc.CardBody([
+                                html.H6("Total Return", className="text-muted"),
+                                html.H4(f"{metrics['total_return']*100:.1f}%")
+                            ])
+                        ], className="mb-2")
+                    ], width=4)
+                ])
+                
+                # Create equity curve chart
+                equity_chart = go.Figure()
+                equity_chart.add_trace(go.Scatter(
+                    y=result['equity'],
+                    mode='lines',
+                    name='Equity',
+                    line=dict(color='blue', width=2)
+                ))
+                equity_chart.update_layout(
+                    title=f"Equity Curve - {symbol} ({strategy})",
+                    xaxis_title="Days",
+                    yaxis_title="Portfolio Value ($)",
+                    height=400,
+                    hovermode='x unified'
+                )
+                
+                details = html.Div([
+                    html.H5(f"Backtest Results: {symbol}"),
+                    html.Hr(),
+                    metrics_cards,
+                    html.Hr(),
+                    dcc.Graph(figure=equity_chart)
+                ])
+                
+                status = html.Div(
+                    f"✓ Backtest completed for {symbol} with {strategy}",
+                    className="text-success"
+                )
+                
+                return details, status
+                
+            except Exception as e:
+                import traceback
+                error_msg = html.Div([
+                    html.P(f"Error running backtest: {str(e)}", className="text-danger"),
+                    html.Pre(traceback.format_exc(), style={'fontSize': '0.8em'})
+                ])
+                return error_msg, html.Div(f"✗ Error: {str(e)}", className="text-danger")
     
     def run(self, host: str = '0.0.0.0', port: int = 8050, debug: bool = False):
         """

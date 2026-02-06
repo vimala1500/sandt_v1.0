@@ -18,6 +18,7 @@ from typing import Dict, List, Optional, Tuple, Any
 import numpy as np
 import pandas as pd
 import zarr
+from numcodecs import Blosc
 from datetime import datetime
 
 
@@ -71,8 +72,7 @@ class BacktestStore:
                     ('end_date', 'U10'),
                     ('timestamp', 'U32')
                 ],
-                chunks=(1000,),
-                compressor=zarr.Blosc(cname='zstd', clevel=3, shuffle=2)
+                chunks=(1000,)
             )
         
         # Initialize params lookup if not exists
@@ -151,8 +151,17 @@ class BacktestStore:
         self.root['metadata'].resize(current_size + 1)
         self.root['metadata'][current_size] = metadata_entry[0]
         
-        # Store params lookup
-        self.root['params_lookup'][params_hash] = json.dumps(params)
+        # Store params in metadata attributes (simpler than separate array)
+        # We'll store as attribute on a dummy dataset
+        params_group = self.root['params_lookup']
+        if params_hash not in params_group:
+            # Create a small dummy array to hold the params as attrs
+            params_array = params_group.create_dataset(
+                params_hash,
+                shape=(1,),
+                dtype='i1'
+            )
+            params_array.attrs['params'] = json.dumps(params)
         
         # Store equity curve if provided
         if equity_curve is not None:
@@ -162,9 +171,10 @@ class BacktestStore:
             
             equity_data = equity_group.create_dataset(
                 backtest_id,
+                shape=equity_curve.shape,
+                dtype=equity_curve.dtype,
                 data=equity_curve,
-                chunks=(min(len(equity_curve), 1000),),
-                compressor=zarr.Blosc(cname='zstd', clevel=3)
+                chunks=(min(len(equity_curve), 1000),)
             )
             
             # Store dates and positions as attributes
@@ -180,11 +190,13 @@ class BacktestStore:
                 del trade_group[backtest_id]
             
             # Convert DataFrame to structured array
+            trade_records = trades.to_records(index=False)
             trade_data = trade_group.create_dataset(
                 backtest_id,
-                data=trades.to_records(index=False),
-                chunks=(min(len(trades), 100),),
-                compressor=zarr.Blosc(cname='zstd', clevel=3)
+                shape=trade_records.shape,
+                dtype=trade_records.dtype,
+                data=trade_records,
+                chunks=(min(len(trades), 100),)
             )
         
         return backtest_id
@@ -232,10 +244,11 @@ class BacktestStore:
         # Decode params for readability
         if len(df) > 0:
             params_lookup = self.root['params_lookup']
-            df['params'] = df['params_hash'].apply(
-                lambda h: json.loads(params_lookup[h][()])
-                if h in params_lookup else {}
-            )
+            def get_params(h):
+                if h in params_lookup:
+                    return json.loads(params_lookup[h].attrs['params'])
+                return {}
+            df['params'] = df['params_hash'].apply(get_params)
         
         return df
     

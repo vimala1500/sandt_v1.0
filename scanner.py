@@ -409,8 +409,11 @@ class Scanner:
         Returns:
             DataFrame with added backtest metrics
         """
-        # Load backtest summary
-        summary = self.backtest_engine.load_summary()
+        if len(scan_df) == 0:
+            return scan_df
+        
+        # Use centralized store for fast lookup
+        summary = self.backtest_engine.store.get_all_stats()
         if summary is None or len(summary) == 0:
             return scan_df
         
@@ -419,16 +422,58 @@ class Scanner:
         if len(strategy_results) == 0:
             return scan_df
         
-        # Merge on symbol
+        # Merge on symbol - include win_rate and num_trades prominently
         merged = scan_df.merge(
-            strategy_results[['symbol', 'cagr', 'sharpe_ratio', 'win_rate', 'max_drawdown', 'num_trades']],
+            strategy_results[['symbol', 'win_rate', 'num_trades', 'cagr', 'sharpe_ratio', 'max_drawdown']],
             on='symbol',
             how='left'
         )
         
         return merged
     
-    def get_top_performers(
+    def add_backtest_stats_to_signals(
+        self,
+        signals_df: pd.DataFrame,
+        strategy_name: str,
+        params: Optional[Dict] = None,
+        exit_rule: str = 'default'
+    ) -> pd.DataFrame:
+        """
+        Add win_rate and num_trades columns to scanner signal rows.
+        
+        Args:
+            signals_df: DataFrame with scanner signals (must have 'symbol' column)
+            strategy_name: Strategy name for backtest lookup
+            params: Strategy parameters (optional, matches any if None)
+            exit_rule: Exit rule identifier
+            
+        Returns:
+            DataFrame with added win_rate and num_trades columns
+        """
+        if len(signals_df) == 0 or 'symbol' not in signals_df.columns:
+            return signals_df
+        
+        # Prepare results
+        results = signals_df.copy()
+        results['win_rate'] = None
+        results['num_trades'] = None
+        results['sharpe_ratio'] = None
+        results['cagr'] = None
+        
+        # Lookup stats for each symbol
+        for idx, row in results.iterrows():
+            symbol = row['symbol']
+            stats = self.backtest_engine.get_backtest_stats(
+                symbol, strategy_name, params or {}, exit_rule
+            )
+            
+            if stats:
+                results.at[idx, 'win_rate'] = stats['win_rate']
+                results.at[idx, 'num_trades'] = stats['num_trades']
+                results.at[idx, 'sharpe_ratio'] = stats['sharpe_ratio']
+                results.at[idx, 'cagr'] = stats['cagr']
+        
+        return results
         self,
         strategy_name: str,
         metric: str = 'sharpe_ratio',

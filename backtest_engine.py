@@ -16,6 +16,7 @@ from numba import jit
 from tqdm import tqdm
 
 from strategy import StrategyRegistry, StrategyConfig
+from backtest_store import BacktestStore
 
 
 @jit(nopython=True)
@@ -85,12 +86,17 @@ class BacktestEngine:
         self.zarr_path = self.output_path / "results.zarr"
         self.metadata_path = self.output_path / "metadata.json"
         self.strategy_registry = StrategyRegistry()
+        
+        # Initialize centralized backtest store
+        self.store = BacktestStore(str(self.output_path / "store.zarr"))
     
     def run_backtest(
         self,
         data: pd.DataFrame,
         strategy_config: StrategyConfig,
-        initial_capital: float = 100000.0
+        initial_capital: float = 100000.0,
+        symbol: Optional[str] = None,
+        exit_rule: str = 'default'
     ) -> Dict:
         """
         Run a single backtest.
@@ -99,6 +105,8 @@ class BacktestEngine:
             data: DataFrame with price data and indicators
             strategy_config: Strategy configuration
             initial_capital: Starting capital
+            symbol: Stock symbol (for storage)
+            exit_rule: Exit rule identifier
             
         Returns:
             Dictionary with backtest results and metrics
@@ -121,13 +129,28 @@ class BacktestEngine:
         # Calculate metrics
         metrics = self._calculate_metrics(equity, prices, positions, num_trades)
         
-        return {
+        result = {
             'equity': equity,
             'positions': positions,
             'signals': signals_array,
             'metrics': metrics,
             'dates': data.index.values
         }
+        
+        # Store in centralized store if symbol provided
+        if symbol is not None:
+            self.store.store_backtest(
+                symbol=symbol,
+                strategy=strategy_config.name,
+                params=strategy_config.params,
+                exit_rule=exit_rule,
+                metrics=metrics,
+                equity_curve=equity,
+                positions=positions,
+                dates=data.index.values
+            )
+        
+        return result
     
     def _calculate_metrics(
         self,
@@ -200,7 +223,8 @@ class BacktestEngine:
         data_dict: Dict[str, pd.DataFrame],
         strategy_configs: List[StrategyConfig],
         initial_capital: float = 100000.0,
-        show_progress: bool = True
+        show_progress: bool = True,
+        exit_rule: str = 'default'
     ) -> pd.DataFrame:
         """
         Run backtests for multiple symbols and strategies.
@@ -210,6 +234,7 @@ class BacktestEngine:
             strategy_configs: List of strategy configurations
             initial_capital: Starting capital
             show_progress: Whether to show progress bar
+            exit_rule: Exit rule identifier
             
         Returns:
             DataFrame with results for all [strategy, symbol] pairs
@@ -228,17 +253,21 @@ class BacktestEngine:
             
             for config in strategy_configs:
                 try:
-                    result = self.run_backtest(data, config, initial_capital)
+                    result = self.run_backtest(
+                        data, config, initial_capital,
+                        symbol=symbol, exit_rule=exit_rule
+                    )
                     
                     # Store summary metrics
                     results.append({
                         'symbol': symbol,
                         'strategy': config.name,
                         'params': str(config.params),
+                        'exit_rule': exit_rule,
                         **result['metrics']
                     })
                     
-                    # Store detailed results to Zarr
+                    # Store detailed results to Zarr (legacy)
                     self._store_to_zarr(symbol, config, result)
                     
                 except Exception as e:
@@ -253,7 +282,7 @@ class BacktestEngine:
         # Create DataFrame
         results_df = pd.DataFrame(results)
         
-        # Save to Parquet
+        # Save to Parquet (legacy)
         if len(results_df) > 0:
             parquet_path = self.output_path / "summary.parquet"
             results_df.to_parquet(parquet_path, index=False)
@@ -325,46 +354,108 @@ class BacktestEngine:
     
     def load_summary(self) -> Optional[pd.DataFrame]:
         """
-        Load summary results from Parquet.
+        Load summary results from centralized store.
         
         Returns:
             DataFrame with summary results or None if not found
         """
-        parquet_path = self.output_path / "summary.parquet"
-        if not parquet_path.exists():
+        # Use new centralized store
+        return self.store.get_all_stats()
+    
+    def get_backtest_stats(
+        self,
+        symbol: str,
+        strategy: str,
+        params: Dict[str, Any],
+        exit_rule: str = 'default'
+    ) -> Optional[Dict]:
+        """
+        Get backtest statistics for a specific combination.
+        
+        Args:
+            symbol: Stock symbol
+            strategy: Strategy name
+            params: Strategy parameters
+            exit_rule: Exit rule identifier
+            
+        Returns:
+            Dictionary with stats or None if not found
+        """
+        df = self.store.get_stats(symbol, strategy, params, exit_rule)
+        if len(df) == 0:
             return None
         
-        return pd.read_parquet(parquet_path)
+        row = df.iloc[0]
+        return {
+            'win_rate': float(row['win_rate']),
+            'num_trades': int(row['num_trades']),
+            'total_return': float(row['total_return']),
+            'cagr': float(row['cagr']),
+            'sharpe_ratio': float(row['sharpe_ratio']),
+            'max_drawdown': float(row['max_drawdown']),
+            'expectancy': float(row['expectancy'])
+        }
     
-    def load_detailed_results(self, symbol: str, strategy_name: str) -> Optional[Dict]:
+    def load_detailed_results(self, symbol: str, strategy_name: str, params: Optional[Dict] = None) -> Optional[Dict]:
         """
-        Load detailed results for a specific backtest from Zarr.
+        Load detailed results for a specific backtest from centralized store.
         
         Args:
             symbol: Stock symbol
             strategy_name: Strategy name
+            params: Strategy parameters (optional, uses first match if None)
             
         Returns:
             Dictionary with detailed results or None if not found
         """
-        if not self.zarr_path.exists():
-            return None
+        # If params not provided, get first match
+        if params is None:
+            all_stats = self.store.get_stats(symbol=symbol, strategy=strategy_name)
+            if len(all_stats) == 0:
+                return None
+            params = all_stats.iloc[0]['params']
         
-        store = zarr.open(str(self.zarr_path), mode='r')
+        return self.store.get_detailed_results(symbol, strategy_name, params)
+    
+    def run_single_backtest(
+        self,
+        symbol: str,
+        strategy_name: str,
+        params: Dict[str, Any],
+        data: Optional[pd.DataFrame] = None,
+        exit_rule: str = 'default',
+        initial_capital: float = 100000.0
+    ) -> Dict:
+        """
+        Run a single backtest for a specific symbol/strategy/params combination.
+        Useful for on-demand backtest runs from UI.
         
-        # Find matching group
-        if symbol in store:
-            symbol_group = store[symbol]
-            for group_name in symbol_group.group_keys():
-                if strategy_name in group_name:
-                    group = symbol_group[group_name]
-                    return {
-                        'equity': group['equity'][:],
-                        'positions': group['positions'][:],
-                        'signals': group['signals'][:],
-                        'dates': group['dates'][:],
-                        'metrics': dict(group.attrs['metrics']),
-                        'params': dict(group.attrs['params'])
-                    }
+        Args:
+            symbol: Stock symbol
+            strategy_name: Strategy name
+            params: Strategy parameters
+            data: DataFrame with indicators (loaded automatically if None)
+            exit_rule: Exit rule identifier
+            initial_capital: Starting capital
+            
+        Returns:
+            Dictionary with backtest results
+        """
+        # Load data if not provided
+        if data is None:
+            from indicator_engine import IndicatorEngine
+            engine = IndicatorEngine()
+            data = engine.load_indicators(symbol)
+            if data is None:
+                raise ValueError(f"No indicator data found for {symbol}")
         
-        return None
+        # Create strategy config
+        config = StrategyConfig(name=strategy_name, params=params)
+        
+        # Run backtest
+        result = self.run_backtest(
+            data, config, initial_capital,
+            symbol=symbol, exit_rule=exit_rule
+        )
+        
+        return result

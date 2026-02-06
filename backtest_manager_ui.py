@@ -681,7 +681,7 @@ class BacktestManagerUI:
                 index=False
             )
     
-    def _create_trade_details_view(self, detailed_results: Dict) -> html.Div:
+    def _create_strategy_grouped_view(self, results_df: pd.DataFrame) -> html.Div:
         """Create strategy-grouped results view."""
         grouped_tables = []
         

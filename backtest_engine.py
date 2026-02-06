@@ -129,12 +129,16 @@ class BacktestEngine:
         # Calculate metrics
         metrics = self._calculate_metrics(equity, prices, positions, num_trades)
         
+        # Extract trade-by-trade details
+        trades_df = self.extract_trades(prices, positions, equity, data.index.values, initial_capital)
+        
         result = {
             'equity': equity,
             'positions': positions,
             'signals': signals_array,
             'metrics': metrics,
-            'dates': data.index.values
+            'dates': data.index.values,
+            'trades': trades_df
         }
         
         # Store in centralized store if symbol provided
@@ -147,7 +151,8 @@ class BacktestEngine:
                 metrics=metrics,
                 equity_curve=equity,
                 positions=positions,
-                dates=data.index.values
+                dates=data.index.values,
+                trades=trades_df
             )
         
         return result
@@ -217,6 +222,154 @@ class BacktestEngine:
             'num_trades': int(num_trades),
             'expectancy': float(expectancy)
         }
+    
+    def extract_trades(
+        self,
+        prices: np.ndarray,
+        positions: np.ndarray,
+        equity: np.ndarray,
+        dates: np.ndarray,
+        initial_capital: float = 100000.0
+    ) -> pd.DataFrame:
+        """
+        Extract trade-by-trade details from backtest results.
+        
+        Args:
+            prices: Array of close prices
+            positions: Array of positions (1=long, -1=short, 0=neutral)
+            equity: Equity curve
+            dates: Array of dates
+            initial_capital: Starting capital
+            
+        Returns:
+            DataFrame with trade-by-trade details
+        """
+        trades = []
+        trade_num = 0
+        entry_idx = None
+        entry_price = None
+        entry_equity = None
+        position_type = None
+        max_adverse = 0.0
+        max_favorable = 0.0
+        
+        for i in range(len(positions)):
+            current_pos = positions[i]
+            prev_pos = positions[i-1] if i > 0 else 0
+            
+            # Entry signal - position changes from 0 to non-zero
+            if current_pos != 0 and prev_pos == 0:
+                entry_idx = i
+                entry_price = prices[i]
+                entry_equity = equity[i-1] if i > 0 else initial_capital
+                position_type = 'Long' if current_pos > 0 else 'Short'
+                max_adverse = 0.0
+                max_favorable = 0.0
+                trade_num += 1
+            
+            # Track MAE/MFE during the trade
+            elif entry_idx is not None and current_pos != 0 and current_pos == prev_pos:
+                if position_type == 'Long':
+                    # For long positions
+                    pnl_pct = (prices[i] - entry_price) / entry_price
+                    max_adverse = min(max_adverse, pnl_pct)
+                    max_favorable = max(max_favorable, pnl_pct)
+                else:
+                    # For short positions
+                    pnl_pct = (entry_price - prices[i]) / entry_price
+                    max_adverse = min(max_adverse, pnl_pct)
+                    max_favorable = max(max_favorable, pnl_pct)
+            
+            # Exit signal - position changes from non-zero to 0 or reverses
+            if entry_idx is not None and (current_pos == 0 or (prev_pos != 0 and current_pos != prev_pos)):
+                exit_idx = i
+                exit_price = prices[i]
+                exit_equity = equity[i]
+                
+                # Calculate P&L
+                if position_type == 'Long':
+                    pnl_pct = (exit_price - entry_price) / entry_price
+                else:
+                    pnl_pct = (entry_price - exit_price) / entry_price
+                
+                pnl_dollars = exit_equity - entry_equity
+                
+                # Calculate position size (simplified)
+                size = int(entry_equity / entry_price)
+                
+                # Holding period
+                holding_period = exit_idx - entry_idx
+                
+                # Exit reason (simplified)
+                exit_reason = 'Signal Exit' if current_pos == 0 else 'Signal Reversal'
+                
+                trades.append({
+                    'Trade No.': trade_num,
+                    'Entry Date': pd.to_datetime(dates[entry_idx]),
+                    'Entry Price': entry_price,
+                    'Exit Date': pd.to_datetime(dates[exit_idx]),
+                    'Exit Price': exit_price,
+                    'Position': position_type,
+                    'Size': size,
+                    'Holding Period': holding_period,
+                    'P&L %': pnl_pct,
+                    'P&L $': pnl_dollars,
+                    'MAE': max_adverse,
+                    'MFE': max_favorable,
+                    'Exit Reason': exit_reason,
+                    'Comments': ''
+                })
+                
+                # Reset for next trade or check if it's a reversal
+                if current_pos != 0:
+                    # Signal reversal - immediately enter new position
+                    entry_idx = i
+                    entry_price = prices[i]
+                    entry_equity = equity[i]
+                    position_type = 'Long' if current_pos > 0 else 'Short'
+                    max_adverse = 0.0
+                    max_favorable = 0.0
+                    trade_num += 1
+                else:
+                    entry_idx = None
+                    entry_price = None
+                    position_type = None
+                    max_adverse = 0.0
+                    max_favorable = 0.0
+        
+        # Handle open position at end
+        if entry_idx is not None and entry_idx < len(positions):
+            exit_idx = len(positions) - 1
+            exit_price = prices[exit_idx]
+            exit_equity = equity[exit_idx]
+            
+            if position_type == 'Long':
+                pnl_pct = (exit_price - entry_price) / entry_price
+            else:
+                pnl_pct = (entry_price - exit_price) / entry_price
+            
+            pnl_dollars = exit_equity - entry_equity
+            size = int(entry_equity / entry_price)
+            holding_period = exit_idx - entry_idx
+            
+            trades.append({
+                'Trade No.': trade_num,
+                'Entry Date': pd.to_datetime(dates[entry_idx]),
+                'Entry Price': entry_price,
+                'Exit Date': pd.to_datetime(dates[exit_idx]),
+                'Exit Price': exit_price,
+                'Position': position_type,
+                'Size': size,
+                'Holding Period': holding_period,
+                'P&L %': pnl_pct,
+                'P&L $': pnl_dollars,
+                'MAE': max_adverse,
+                'MFE': max_favorable,
+                'Exit Reason': 'End of Period',
+                'Comments': ''
+            })
+        
+        return pd.DataFrame(trades)
     
     def run_multiple_backtests(
         self,

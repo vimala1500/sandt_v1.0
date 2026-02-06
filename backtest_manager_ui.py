@@ -19,6 +19,7 @@ from typing import List, Dict, Any, Optional
 import pandas as pd
 import numpy as np
 import plotly.graph_objs as go
+import dash
 from dash import dcc, html, dash_table, callback_context
 from dash.dependencies import Input, Output, State
 import dash_bootstrap_components as dbc
@@ -265,7 +266,9 @@ class BacktestManagerUI:
             # Hidden stores for state management
             dcc.Store(id='batch-results-store'),
             dcc.Store(id='current-view-mode', data='strategy'),
-            dcc.Download(id='download-results')
+            dcc.Store(id='selected-backtest-data'),
+            dcc.Download(id='download-results'),
+            dcc.Download(id='download-trades')
         ], fluid=True)
     
     def setup_callbacks(self, app):
@@ -644,6 +647,102 @@ class BacktestManagerUI:
                             className="text-success")
             
             return ""
+        
+        @app.callback(
+            [Output('trade-details-modal', 'is_open'),
+             Output('trade-modal-title', 'children'),
+             Output('trade-modal-body', 'children')],
+            [Input({'type': 'results-table', 'strategy': dash.ALL}, 'active_cell'),
+             Input({'type': 'results-table', 'symbol': dash.ALL}, 'active_cell'),
+             Input('close-trade-modal-btn', 'n_clicks')],
+            [State({'type': 'results-table', 'strategy': dash.ALL}, 'data'),
+             State({'type': 'results-table', 'symbol': dash.ALL}, 'data'),
+             State('trade-details-modal', 'is_open')]
+        )
+        def show_trade_details(strategy_active_cells, symbol_active_cells, close_clicks, 
+                              strategy_data_list, symbol_data_list, is_open):
+            """Display trade-by-trade details when a row is clicked."""
+            ctx = callback_context
+            
+            if not ctx.triggered:
+                return False, "", ""
+            
+            trigger_id = ctx.triggered[0]['prop_id']
+            
+            # Close button clicked
+            if 'close-trade-modal-btn' in trigger_id:
+                return False, "", ""
+            
+            # Find which table was clicked
+            clicked_row_data = None
+            
+            # Check strategy tables
+            for i, active_cell in enumerate(strategy_active_cells or []):
+                if active_cell and strategy_data_list and i < len(strategy_data_list):
+                    data = strategy_data_list[i]
+                    if data and active_cell['row'] < len(data):
+                        clicked_row_data = data[active_cell['row']]
+                        break
+            
+            # Check symbol tables if not found
+            if not clicked_row_data:
+                for i, active_cell in enumerate(symbol_active_cells or []):
+                    if active_cell and symbol_data_list and i < len(symbol_data_list):
+                        data = symbol_data_list[i]
+                        if data and active_cell['row'] < len(data):
+                            clicked_row_data = data[active_cell['row']]
+                            break
+            
+            if not clicked_row_data:
+                return False, "", ""
+            
+            # Extract backtest identifiers
+            symbol = clicked_row_data.get('symbol', '')
+            strategy = clicked_row_data.get('strategy', '')
+            params = clicked_row_data.get('params', {})
+            exit_rule = clicked_row_data.get('exit_rule', 'default')
+            
+            # Get detailed results from store
+            detailed_results = self.backtest_engine.store.get_detailed_results(
+                symbol=symbol,
+                strategy=strategy,
+                params=params,
+                exit_rule=exit_rule
+            )
+            
+            if not detailed_results:
+                return True, "⚠️ Trade Details Not Available", html.P(
+                    "Unable to load trade details for this backtest.",
+                    className="text-warning"
+                )
+            
+            # Create modal content
+            modal_title = f"📊 Trade Details: {symbol} - {strategy} ({exit_rule})"
+            modal_body = self._create_trade_details_view(detailed_results)
+            
+            return True, modal_title, modal_body
+        
+        @app.callback(
+            Output('download-trades', 'data'),
+            Input({'type': 'export-trades-btn', 'index': dash.ALL}, 'n_clicks'),
+            State('selected-backtest-data', 'data'),
+            prevent_initial_call=True
+        )
+        def export_trades(n_clicks, backtest_data):
+            """Export trade details to CSV."""
+            if not any(n_clicks) or not backtest_data:
+                return None
+            
+            trades_df = pd.DataFrame(backtest_data.get('trades', []))
+            
+            if trades_df.empty:
+                return None
+            
+            return dcc.send_data_frame(
+                trades_df.to_csv,
+                f"trades_{backtest_data['symbol']}_{backtest_data['strategy']}.csv",
+                index=False
+            )
     
     def _create_strategy_grouped_view(self, results_df: pd.DataFrame) -> html.Div:
         """Create strategy-grouped results view."""
@@ -671,6 +770,7 @@ class BacktestManagerUI:
                     ]),
                     dbc.CardBody([
                         dash_table.DataTable(
+                            id={'type': 'results-table', 'strategy': strategy},
                             data=strategy_df.to_dict('records'),
                             columns=[
                                 {'name': 'Symbol', 'id': 'symbol'},
@@ -693,7 +793,8 @@ class BacktestManagerUI:
                                 'textAlign': 'left',
                                 'padding': '8px',
                                 'fontSize': '13px',
-                                'minWidth': '80px'
+                                'minWidth': '80px',
+                                'cursor': 'pointer'
                             },
                             style_header={
                                 'backgroundColor': 'rgb(230, 230, 230)',
@@ -724,8 +825,7 @@ class BacktestManagerUI:
                             ],
                             sort_action='native',
                             filter_action='native',
-                            page_size=20,
-                            row_selectable='single'
+                            page_size=20
                         )
                     ])
                 ], className="mb-3")
@@ -759,6 +859,7 @@ class BacktestManagerUI:
                     ]),
                     dbc.CardBody([
                         dash_table.DataTable(
+                            id={'type': 'results-table', 'symbol': symbol},
                             data=symbol_df.to_dict('records'),
                             columns=[
                                 {'name': 'Strategy', 'id': 'strategy'},
@@ -781,7 +882,8 @@ class BacktestManagerUI:
                                 'textAlign': 'left',
                                 'padding': '8px',
                                 'fontSize': '13px',
-                                'minWidth': '80px'
+                                'minWidth': '80px',
+                                'cursor': 'pointer'
                             },
                             style_header={
                                 'backgroundColor': 'rgb(230, 230, 230)',
@@ -812,11 +914,251 @@ class BacktestManagerUI:
                             ],
                             sort_action='native',
                             filter_action='native',
-                            page_size=20,
-                            row_selectable='single'
+                            page_size=20
                         )
                     ])
                 ], className="mb-3")
             )
         
         return html.Div(grouped_tables)
+    
+    def _create_trade_details_view(self, detailed_results: Dict) -> html.Div:
+        """Create comprehensive trade-by-trade details view with summary metrics and visualizations."""
+        metrics = detailed_results.get('metrics', {})
+        trades = detailed_results.get('trades')
+        equity_curve = detailed_results.get('equity_curve')
+        dates = detailed_results.get('dates', [])
+        
+        # Convert trades to DataFrame if it isn't already
+        if trades is not None and not isinstance(trades, pd.DataFrame):
+            trades_df = pd.DataFrame(trades)
+        else:
+            trades_df = trades
+        
+        # Summary metrics section
+        summary_section = dbc.Card([
+            dbc.CardHeader(html.H5("📈 Summary Metrics", className="mb-0")),
+            dbc.CardBody([
+                dbc.Row([
+                    dbc.Col([
+                        html.P([
+                            html.Strong("Win Rate: "),
+                            f"{metrics.get('win_rate', 0)*100:.2f}%"
+                        ], className="mb-2"),
+                        html.P([
+                            html.Strong("Total Trades: "),
+                            f"{metrics.get('num_trades', 0)}"
+                        ], className="mb-2"),
+                        html.P([
+                            html.Strong("CAGR: "),
+                            f"{metrics.get('cagr', 0)*100:.2f}%"
+                        ], className="mb-2")
+                    ], md=3),
+                    dbc.Col([
+                        html.P([
+                            html.Strong("Sharpe Ratio: "),
+                            f"{metrics.get('sharpe_ratio', 0):.2f}"
+                        ], className="mb-2"),
+                        html.P([
+                            html.Strong("Max Drawdown: "),
+                            f"{metrics.get('max_drawdown', 0)*100:.2f}%"
+                        ], className="mb-2"),
+                        html.P([
+                            html.Strong("Total Return: "),
+                            f"{metrics.get('total_return', 0)*100:.2f}%"
+                        ], className="mb-2")
+                    ], md=3),
+                    dbc.Col([
+                        html.P([
+                            html.Strong("Expectancy: "),
+                            f"{metrics.get('expectancy', 0)*100:.2f}%"
+                        ], className="mb-2")
+                    ], md=3)
+                ])
+            ])
+        ], className="mb-3")
+        
+        # Calculate additional trade statistics if trades exist
+        trade_stats_section = None
+        if trades_df is not None and len(trades_df) > 0:
+            winning_trades = trades_df[trades_df['P&L %'] > 0]
+            losing_trades = trades_df[trades_df['P&L %'] <= 0]
+            
+            avg_win = winning_trades['P&L %'].mean() if len(winning_trades) > 0 else 0
+            avg_loss = losing_trades['P&L %'].mean() if len(losing_trades) > 0 else 0
+            avg_holding = trades_df['Holding Period'].mean()
+            
+            trade_stats_section = dbc.Card([
+                dbc.CardHeader(html.H5("📊 Trade Statistics", className="mb-0")),
+                dbc.CardBody([
+                    dbc.Row([
+                        dbc.Col([
+                            html.P([
+                                html.Strong("Winning Trades: "),
+                                f"{len(winning_trades)}"
+                            ], className="mb-2"),
+                            html.P([
+                                html.Strong("Losing Trades: "),
+                                f"{len(losing_trades)}"
+                            ], className="mb-2")
+                        ], md=3),
+                        dbc.Col([
+                            html.P([
+                                html.Strong("Avg Win: "),
+                                f"{avg_win*100:.2f}%"
+                            ], className="mb-2"),
+                            html.P([
+                                html.Strong("Avg Loss: "),
+                                f"{avg_loss*100:.2f}%"
+                            ], className="mb-2")
+                        ], md=3),
+                        dbc.Col([
+                            html.P([
+                                html.Strong("Profit Factor: "),
+                                f"{abs(avg_win/avg_loss):.2f}" if avg_loss != 0 else "N/A"
+                            ], className="mb-2"),
+                            html.P([
+                                html.Strong("Avg Holding Period: "),
+                                f"{avg_holding:.1f} days"
+                            ], className="mb-2")
+                        ], md=3)
+                    ])
+                ])
+            ], className="mb-3")
+        
+        # Equity curve visualization
+        equity_chart = None
+        if equity_curve is not None and len(equity_curve) > 0:
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(
+                x=dates if dates else list(range(len(equity_curve))),
+                y=equity_curve,
+                mode='lines',
+                name='Equity',
+                line=dict(color='blue', width=2)
+            ))
+            
+            fig.update_layout(
+                title='Equity Curve',
+                xaxis_title='Date',
+                yaxis_title='Equity ($)',
+                hovermode='x unified',
+                height=400
+            )
+            
+            equity_chart = dbc.Card([
+                dbc.CardHeader(html.H5("📈 Equity Curve", className="mb-0")),
+                dbc.CardBody([dcc.Graph(figure=fig)])
+            ], className="mb-3")
+        
+        # Trade distribution chart
+        distribution_chart = None
+        if trades_df is not None and len(trades_df) > 0:
+            fig_dist = go.Figure()
+            fig_dist.add_trace(go.Histogram(
+                x=trades_df['P&L %'] * 100,
+                nbinsx=20,
+                name='P&L Distribution',
+                marker_color='steelblue'
+            ))
+            
+            fig_dist.update_layout(
+                title='Trade P&L Distribution',
+                xaxis_title='P&L (%)',
+                yaxis_title='Frequency',
+                height=300
+            )
+            
+            distribution_chart = dbc.Card([
+                dbc.CardHeader(html.H5("📊 Trade P&L Distribution", className="mb-0")),
+                dbc.CardBody([dcc.Graph(figure=fig_dist)])
+            ], className="mb-3")
+        
+        # Drawdown plot
+        drawdown_chart = None
+        if equity_curve is not None and len(equity_curve) > 0:
+            peak = np.maximum.accumulate(equity_curve)
+            drawdown = (equity_curve - peak) / peak * 100
+            
+            fig_dd = go.Figure()
+            fig_dd.add_trace(go.Scatter(
+                x=dates if dates else list(range(len(drawdown))),
+                y=drawdown,
+                fill='tozeroy',
+                name='Drawdown',
+                line=dict(color='red')
+            ))
+            
+            fig_dd.update_layout(
+                title='Drawdown Over Time',
+                xaxis_title='Date',
+                yaxis_title='Drawdown (%)',
+                height=300
+            )
+            
+            drawdown_chart = dbc.Card([
+                dbc.CardHeader(html.H5("📉 Drawdown", className="mb-0")),
+                dbc.CardBody([dcc.Graph(figure=fig_dd)])
+            ], className="mb-3")
+        
+        # Trade-by-trade table
+        trades_table = None
+        if trades_df is not None and len(trades_df) > 0:
+            trades_display = trades_df.copy()
+            if 'Entry Date' in trades_display.columns:
+                trades_display['Entry Date'] = pd.to_datetime(trades_display['Entry Date']).dt.strftime('%Y-%m-%d')
+            if 'Exit Date' in trades_display.columns:
+                trades_display['Exit Date'] = pd.to_datetime(trades_display['Exit Date']).dt.strftime('%Y-%m-%d')
+            
+            trades_table = dbc.Card([
+                dbc.CardHeader(html.H5("📋 Trade-by-Trade Details", className="mb-0")),
+                dbc.CardBody([
+                    dash_table.DataTable(
+                        data=trades_display.to_dict('records'),
+                        columns=[
+                            {'name': 'Trade No.', 'id': 'Trade No.'},
+                            {'name': 'Entry Date', 'id': 'Entry Date'},
+                            {'name': 'Entry Price', 'id': 'Entry Price', 'type': 'numeric', 'format': {'specifier': '.2f'}},
+                            {'name': 'Exit Date', 'id': 'Exit Date'},
+                            {'name': 'Exit Price', 'id': 'Exit Price', 'type': 'numeric', 'format': {'specifier': '.2f'}},
+                            {'name': 'Position', 'id': 'Position'},
+                            {'name': 'Size', 'id': 'Size'},
+                            {'name': 'Holding Period', 'id': 'Holding Period'},
+                            {'name': 'P&L %', 'id': 'P&L %', 'type': 'numeric', 'format': {'specifier': '.2%'}},
+                            {'name': 'P&L $', 'id': 'P&L $', 'type': 'numeric', 'format': {'specifier': ',.2f'}},
+                            {'name': 'MAE', 'id': 'MAE', 'type': 'numeric', 'format': {'specifier': '.2%'}},
+                            {'name': 'MFE', 'id': 'MFE', 'type': 'numeric', 'format': {'specifier': '.2%'}},
+                            {'name': 'Exit Reason', 'id': 'Exit Reason'},
+                            {'name': 'Comments', 'id': 'Comments'}
+                        ],
+                        style_table={'overflowX': 'auto'},
+                        style_cell={'textAlign': 'left', 'padding': '8px', 'fontSize': '12px', 'minWidth': '80px'},
+                        style_header={'backgroundColor': 'rgb(230, 230, 230)', 'fontWeight': 'bold', 'fontSize': '11px'},
+                        style_data_conditional=[
+                            {'if': {'row_index': 'odd'}, 'backgroundColor': 'rgb(248, 248, 248)'},
+                            {'if': {'filter_query': '{P&L %} > 0', 'column_id': 'P&L %'}, 'backgroundColor': '#d4edda', 'color': '#155724'},
+                            {'if': {'filter_query': '{P&L %} <= 0', 'column_id': 'P&L %'}, 'backgroundColor': '#f8d7da', 'color': '#721c24'}
+                        ],
+                        sort_action='native',
+                        filter_action='native',
+                        page_size=20,
+                        export_format='csv'
+                    )
+                ])
+            ], className="mb-3")
+        else:
+            trades_table = dbc.Alert("No trade data available for this backtest.", color="warning")
+        
+        # Assemble all sections
+        sections = [summary_section]
+        if trade_stats_section:
+            sections.append(trade_stats_section)
+        if equity_chart:
+            sections.append(equity_chart)
+        if distribution_chart:
+            sections.append(distribution_chart)
+        if drawdown_chart:
+            sections.append(drawdown_chart)
+        sections.append(trades_table)
+        
+        return html.Div(sections)

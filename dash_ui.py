@@ -16,6 +16,7 @@ from typing import Optional
 from scanner import Scanner
 from indicator_engine import IndicatorEngine
 from backtest_engine import BacktestEngine
+from backtest_manager_ui import BacktestManagerUI
 
 # Data path options to check for price data
 DEFAULT_DATA_PATHS = ['./data/prices', './data/stock_data', '../data/prices']
@@ -29,6 +30,7 @@ class DashUI:
     - Simple interface for configuring scans
     - Table display of scan results with backtest stats
     - Strategy drilldown for detailed analysis
+    - Advanced Backtest Manager portal
     - Lightweight, optimized for Colab environment
     """
     
@@ -49,6 +51,12 @@ class DashUI:
         self.backtest_engine = BacktestEngine(backtest_path)
         self.scanner = Scanner(self.indicator_engine, self.backtest_engine)
         
+        # Initialize Backtest Manager UI
+        self.backtest_manager = BacktestManagerUI(
+            self.indicator_engine, 
+            self.backtest_engine
+        )
+        
         # Initialize Dash app
         self.app = dash.Dash(
             __name__,
@@ -68,6 +76,34 @@ class DashUI:
                 ], width=12)
             ]),
             
+            # Navigation Tabs
+            dbc.Tabs([
+                # Scanner Tab
+                dbc.Tab(
+                    label="📡 Scanner",
+                    tab_id="scanner-tab",
+                    children=self._create_scanner_layout()
+                ),
+                
+                # Backtest Manager Tab
+                dbc.Tab(
+                    label="🚀 Backtest Manager",
+                    tab_id="backtest-manager-tab",
+                    children=self.backtest_manager.create_layout()
+                ),
+                
+                # Legacy Backtest Tab
+                dbc.Tab(
+                    label="📊 Quick Backtest",
+                    tab_id="quick-backtest-tab",
+                    children=self._create_quick_backtest_layout()
+                )
+            ], id="main-tabs", active_tab="scanner-tab", className="mb-4")
+        ], fluid=True)
+    
+    def _create_scanner_layout(self):
+        """Create scanner tab layout."""
+        return html.Div([
             # Indicator computation section
             dbc.Row([
                 dbc.Col([
@@ -261,11 +297,27 @@ class DashUI:
                 ], width=9)
             ], className="mb-4"),
             
+            # Backtest Summary Section  
+            dbc.Row([
+                dbc.Col([
+                    dbc.Card([
+                        dbc.CardHeader("Backtest Summary"),
+                        dbc.CardBody([
+                            html.Div(id='backtest-summary-div')
+                        ])
+                    ])
+                ], width=12)
+            ])
+        ])
+    
+    def _create_quick_backtest_layout(self):
+        """Create quick backtest tab layout."""
+        return html.Div([
             # Backtest Controls Section
             dbc.Row([
                 dbc.Col([
                     dbc.Card([
-                        dbc.CardHeader("Backtest Manager"),
+                        dbc.CardHeader("Quick Backtest"),
                         dbc.CardBody([
                             dbc.Row([
                                 dbc.Col([
@@ -318,22 +370,14 @@ class DashUI:
                         ])
                     ])
                 ], width=9)
-            ], className="mb-4"),
-            
-            dbc.Row([
-                dbc.Col([
-                    dbc.Card([
-                        dbc.CardHeader("Backtest Summary"),
-                        dbc.CardBody([
-                            html.Div(id='backtest-summary-div')
-                        ])
-                    ])
-                ], width=12)
             ])
-        ], fluid=True)
+        ])
     
     def _setup_callbacks(self):
         """Setup Dash callbacks."""
+        
+        # Setup Backtest Manager callbacks
+        self.backtest_manager.setup_callbacks(self.app)
         
         @self.app.callback(
             [Output('rsi-controls', 'style'),

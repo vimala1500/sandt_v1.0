@@ -474,6 +474,8 @@ class Scanner:
                 results.at[idx, 'cagr'] = stats['cagr']
         
         return results
+    
+    def get_top_performers(
         self,
         strategy_name: str,
         metric: str = 'sharpe_ratio',

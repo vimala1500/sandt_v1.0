@@ -8,7 +8,7 @@ Outputs metrics and results to Zarr for efficient storage.
 import os
 import json
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple, Optional, Any
 import numpy as np
 import pandas as pd
 import zarr

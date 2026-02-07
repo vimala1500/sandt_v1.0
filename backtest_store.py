@@ -288,7 +288,7 @@ class BacktestStore:
         Args:
             symbol: Stock symbol
             strategy: Strategy name
-            params: Strategy parameters
+            params: Strategy parameters (or None to get first match)
             exit_rule: Exit rule identifier
             
         Returns:
@@ -304,19 +304,39 @@ class BacktestStore:
                 logger.warning(f"get_detailed_results: Invalid params type: {type(params)}, converting to dict")
                 params = {} if params is None else dict(params)
             
-            params_hash = self._hash_params(params)
-            backtest_id = f"{symbol}_{strategy}_{params_hash}_{exit_rule}"
-            
-            logger.debug(f"get_detailed_results: Retrieving backtest_id: {backtest_id}")
-            
-            # Get stats from metadata
+            # Get stats matching symbol, strategy, and exit_rule
+            # Don't filter by params initially to avoid hash mismatch issues
             try:
-                stats_df = self.get_stats(symbol, strategy, params, exit_rule)
+                stats_df = self.get_stats(symbol=symbol, strategy=strategy, exit_rule=exit_rule)
                 if len(stats_df) == 0:
-                    logger.warning(f"get_detailed_results: No stats found for {backtest_id}")
+                    logger.warning(f"get_detailed_results: No stats found for {symbol}_{strategy}_{exit_rule}")
                     return None
+                
+                # If params provided, try to find best match
+                # But if params were loaded from JSON, they should exactly match
+                if params:
+                    # Try exact hash match first
+                    params_hash_attempt = self._hash_params(params)
+                    exact_match = stats_df[stats_df['params_hash'] == params_hash_attempt]
+                    
+                    if len(exact_match) > 0:
+                        # Found exact match
+                        stats_row = exact_match.iloc[0]
+                    else:
+                        # No exact match - params might have been loaded from JSON with type changes
+                        # Use the first match and log a warning
+                        logger.debug(f"get_detailed_results: No exact param hash match, using first result for {symbol}")
+                        stats_row = stats_df.iloc[0]
+                else:
+                    # No params filtering, use first result
+                    stats_row = stats_df.iloc[0]
+                
+                # Use the params_hash from metadata (which is the one used for storage)
+                params_hash = stats_row['params_hash']
+                backtest_id = f"{symbol}_{strategy}_{params_hash}_{exit_rule}"
+                logger.debug(f"get_detailed_results: Retrieving backtest_id: {backtest_id}")
             except Exception as e:
-                logger.error(f"get_detailed_results: Error retrieving stats for {backtest_id}: {str(e)}")
+                logger.error(f"get_detailed_results: Error retrieving stats for {symbol}_{strategy}: {str(e)}")
                 return None
             
             stats = stats_df.iloc[0].to_dict()

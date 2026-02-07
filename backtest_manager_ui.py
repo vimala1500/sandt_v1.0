@@ -86,7 +86,10 @@ class BacktestManagerUI:
             Dash layout component
         """
         return dbc.Container([
-            html.H2("🚀 Backtest Manager Portal", className="mb-4"),
+            html.H2("📊 Backtest Manager", className="mb-3"),
+            
+            # Data Availability Notification
+            html.Div(id='backtest-data-availability-banner', className="mb-4"),
             
             # Configuration Section
             dbc.Row([
@@ -282,6 +285,75 @@ class BacktestManagerUI:
         Args:
             app: Dash app instance
         """
+        
+        @app.callback(
+            Output('backtest-data-availability-banner', 'children'),
+            Input('health-check-interval', 'n_intervals')
+        )
+        def update_data_availability_banner(n_intervals):
+            """Display data availability status for backtesting."""
+            from datetime import datetime
+            
+            try:
+                metadata = self.indicator_engine.get_metadata()
+                symbols = self.indicator_engine.list_available_symbols()
+                symbols_count = len(symbols)
+                
+                # Get last computation date
+                last_computed = metadata.get('last_computation_date')
+                if last_computed:
+                    try:
+                        dt = datetime.fromisoformat(last_computed)
+                        date_str = dt.strftime('%B %d, %Y at %I:%M %p')
+                    except:
+                        date_str = last_computed
+                else:
+                    date_str = None
+                
+                if symbols_count > 0 and date_str:
+                    # Data is available
+                    return dbc.Alert([
+                        html.Div([
+                            html.H5("✅ Data Available for Backtesting", className="alert-heading mb-2"),
+                            html.P([
+                                f"Indicators computed for {symbols_count} symbols. ",
+                                f"Last updated: {date_str}. ",
+                                "You can run backtests using data up to this computation date."
+                            ], className="mb-0")
+                        ])
+                    ], color="success", className="mb-3")
+                elif symbols_count > 0:
+                    # Data exists but no timestamp
+                    return dbc.Alert([
+                        html.Div([
+                            html.H5("✅ Data Available for Backtesting", className="alert-heading mb-2"),
+                            html.P([
+                                f"Indicators computed for {symbols_count} symbols. ",
+                                "You can run backtests using this data."
+                            ], className="mb-0")
+                        ])
+                    ], color="success", className="mb-3")
+                else:
+                    # No data available
+                    return dbc.Alert([
+                        html.Div([
+                            html.H5("⚠️ No Data Available", className="alert-heading mb-2"),
+                            html.P([
+                                "Indicators have not been computed yet. ",
+                                "Please go to the ",
+                                html.Strong("Indicators"),
+                                " page and compute indicators before running backtests."
+                            ], className="mb-0")
+                        ])
+                    ], color="warning", className="mb-3")
+                    
+            except Exception as e:
+                return dbc.Alert([
+                    html.Div([
+                        html.H5("❌ Error", className="alert-heading mb-2"),
+                        html.P(f"Unable to check data availability: {str(e)}", className="mb-0")
+                    ])
+                ], color="danger", className="mb-3")
         
         @app.callback(
             Output('symbol-checklist-container', 'children'),

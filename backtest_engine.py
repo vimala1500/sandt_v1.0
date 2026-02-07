@@ -7,6 +7,7 @@ Outputs metrics and results to Zarr for efficient storage.
 
 import os
 import json
+import logging
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional, Any
 import numpy as np
@@ -17,6 +18,9 @@ from tqdm import tqdm
 
 from strategy import StrategyRegistry, StrategyConfig
 from backtest_store import BacktestStore
+
+# Configure logger
+logger = logging.getLogger(__name__)
 
 
 @jit(nopython=True)
@@ -131,6 +135,7 @@ class BacktestEngine:
         
         # Extract trade-by-trade details
         trades_df = self.extract_trades(prices, positions, equity, data.index.values, initial_capital)
+        logger.info(f"run_backtest: Extracted {len(trades_df)} trades for {symbol or 'unknown'} - {strategy_config.name}")
         
         result = {
             'equity': equity,
@@ -143,6 +148,7 @@ class BacktestEngine:
         
         # Store in centralized store if symbol provided
         if symbol is not None:
+            logger.debug(f"run_backtest: Storing backtest for {symbol} - {strategy_config.name} - {exit_rule}")
             self.store.store_backtest(
                 symbol=symbol,
                 strategy=strategy_config.name,

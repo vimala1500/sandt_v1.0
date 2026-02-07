@@ -188,28 +188,40 @@ class BacktestStore:
                 equity_data.attrs['positions'] = positions.tolist()
         
         # Store trade details if provided
-        if trades is not None and len(trades) > 0:
-            trade_group = self.root['trade_details']
-            if backtest_id in trade_group:
-                del trade_group[backtest_id]
-            
-            # Convert DataFrame to JSON-serializable dict
-            trades_dict = trades.to_dict('records')
-            # Convert any datetime objects to strings
-            for trade in trades_dict:
-                for key, value in trade.items():
-                    if pd.api.types.is_datetime64_any_dtype(type(value)) or isinstance(value, (pd.Timestamp, np.datetime64)):
-                        trade[key] = str(value)
-            
-            # Store as JSON in a text array
-            trades_json = json.dumps(trades_dict)
-            # Use a simple string array
-            trade_data = trade_group.create_dataset(
-                backtest_id,
-                shape=(1,),
-                dtype=f'U{len(trades_json)}'  # Unicode string with appropriate length
-            )
-            trade_data[0] = trades_json
+        # Always store trades if provided, even if empty - this lets us distinguish
+        # between "no trades occurred" vs "trade data not stored/missing"
+        if trades is not None:
+            try:
+                trade_group = self.root['trade_details']
+                if backtest_id in trade_group:
+                    del trade_group[backtest_id]
+                
+                # Convert DataFrame to JSON-serializable dict
+                trades_dict = trades.to_dict('records')
+                # Convert any datetime objects to strings
+                for trade in trades_dict:
+                    for key, value in trade.items():
+                        if pd.api.types.is_datetime64_any_dtype(type(value)) or isinstance(value, (pd.Timestamp, np.datetime64)):
+                            trade[key] = str(value)
+                
+                # Store as JSON in a text array
+                trades_json = json.dumps(trades_dict)
+                # Use a simple string array with sufficient length
+                # Add buffer for safety in case of JSON format variations
+                TRADE_JSON_BUFFER = 100
+                trade_data = trade_group.create_dataset(
+                    backtest_id,
+                    shape=(1,),
+                    dtype=f'U{len(trades_json) + TRADE_JSON_BUFFER}'
+                )
+                trade_data[0] = trades_json
+                
+                logger.info(f"store_backtest: Stored {len(trades)} trades for {backtest_id}")
+            except Exception as e:
+                logger.error(f"store_backtest: Failed to store trades for {backtest_id}: {str(e)}", exc_info=True)
+                # Continue without failing the entire storage operation
+        else:
+            logger.debug(f"store_backtest: No trades provided for {backtest_id}")
         
         return backtest_id
     
@@ -277,7 +289,7 @@ class BacktestStore:
         Args:
             symbol: Stock symbol
             strategy: Strategy name
-            params: Strategy parameters
+            params: Strategy parameters (or None to get first match)
             exit_rule: Exit rule identifier
             
         Returns:
@@ -293,19 +305,40 @@ class BacktestStore:
                 logger.warning(f"get_detailed_results: Invalid params type: {type(params)}, converting to dict")
                 params = {} if params is None else dict(params)
             
-            params_hash = self._hash_params(params)
-            backtest_id = f"{symbol}_{strategy}_{params_hash}_{exit_rule}"
-            
-            logger.debug(f"get_detailed_results: Retrieving backtest_id: {backtest_id}")
-            
-            # Get stats from metadata
+            # Get stats matching symbol, strategy, and exit_rule
+            # Don't filter by params initially to avoid hash mismatch issues
             try:
-                stats_df = self.get_stats(symbol, strategy, params, exit_rule)
+                stats_df = self.get_stats(symbol=symbol, strategy=strategy, exit_rule=exit_rule)
                 if len(stats_df) == 0:
-                    logger.warning(f"get_detailed_results: No stats found for {backtest_id}")
+                    logger.warning(f"get_detailed_results: No stats found for {symbol}_{strategy}_{exit_rule}")
                     return None
+                
+                # If params provided, try to find best match
+                # But if params were loaded from JSON, they should exactly match
+                if params:
+                    # Try exact hash match first
+                    params_hash_attempt = self._hash_params(params)
+                    exact_match = stats_df[stats_df['params_hash'] == params_hash_attempt]
+                    
+                    if len(exact_match) > 0:
+                        # Found exact match
+                        stats_row = exact_match.iloc[0]
+                    else:
+                        # No exact match - params might have been loaded from JSON with type changes
+                        # Use the first match but warn since this could be unexpected
+                        logger.warning(f"get_detailed_results: No exact param hash match for {symbol}_{strategy}, using first result. "
+                                      f"This may happen when params are loaded from JSON with type conversions.")
+                        stats_row = stats_df.iloc[0]
+                else:
+                    # No params filtering, use first result
+                    stats_row = stats_df.iloc[0]
+                
+                # Use the params_hash from metadata (which is the one used for storage)
+                params_hash = stats_row['params_hash']
+                backtest_id = f"{symbol}_{strategy}_{params_hash}_{exit_rule}"
+                logger.debug(f"get_detailed_results: Retrieving backtest_id: {backtest_id}")
             except Exception as e:
-                logger.error(f"get_detailed_results: Error retrieving stats for {backtest_id}: {str(e)}")
+                logger.error(f"get_detailed_results: Error retrieving stats for {symbol}_{strategy}: {str(e)}")
                 return None
             
             stats = stats_df.iloc[0].to_dict()
@@ -349,7 +382,14 @@ class BacktestStore:
             try:
                 trade_group = self.root.get('trade_details')
                 if trade_group is not None and backtest_id in trade_group:
-                    trade_json = trade_group[backtest_id][0]
+                    trade_data = trade_group[backtest_id]
+                    # Extract string from zarr array - handle both old and new zarr versions
+                    if hasattr(trade_data, 'shape') and trade_data.shape == (1,):
+                        trade_json = str(trade_data[0])
+                    else:
+                        trade_json = str(trade_data[:])
+                    
+                    # Parse JSON and create DataFrame
                     trades_dict = json.loads(trade_json)
                     result['trades'] = pd.DataFrame(trades_dict)
                     logger.debug(f"get_detailed_results: Loaded {len(result['trades'])} trades for {backtest_id}")

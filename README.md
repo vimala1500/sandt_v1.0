@@ -4,29 +4,68 @@ A complete, modular stock analysis and backtesting system with web UI. Features 
 
 > **📌 RSI Values Match TradingView**: Our RSI implementation uses Wilder's recursive averaging method, matching TradingView exactly. To verify: `python verify_rsi.py` or see [RSI_VERIFICATION.md](RSI_VERIFICATION.md)
 
+## New: Three-Page Workflow
+
+The application now features a clear three-page structure for an intuitive workflow:
+
+### 📊 Page 1: Indicators
+**Pre-compute technical indicators from price data**
+- View computation status: last computation date and symbols processed
+- Compute indicators with one click
+- See available indicators at a glance
+- Required first step before backtesting or scanning
+
+![Indicators Page](https://github.com/user-attachments/assets/4def5659-f3e9-45f4-a3fc-4b89f29663b1)
+
+### 📈 Page 2: Backtest
+**Run strategy backtests on computed indicators**
+- Data availability notification shows when indicators were last computed
+- Select strategies and symbols for batch backtesting
+- View comprehensive results with metrics
+- Export results to CSV/XLSX
+
+![Backtest Page](https://github.com/user-attachments/assets/75ff26ee-1fa2-4d79-bc43-c9bd0b43802c)
+
+### 🔍 Page 3: Scanner
+**Scan for opportunities using indicators and backtest data**
+- Multiple scan types (RSI, MA crossover, candlestick patterns, etc.)
+- Results include win rate and backtest stats
+- Clean interface focused on signal generation
+
+![Scanner Page](https://github.com/user-attachments/assets/752d2346-4757-4ed8-9f99-7bdfbe591e39)
+
 ## System Workflow
 
 ```
 📁 Price Data (Parquet)          ← Input: OHLCV data per symbol
          ↓
-🔧 Compute Indicators            ← REQUIRED: Run compute_indicators.py
+🔧 Page 1: Indicators            ← Compute & store technical indicators
          ↓
-💾 Indicators Store              ← Output: HDF5/JSON with SMA, RSI
+💾 Indicators Store              ← Output: HDF5/JSON with SMA, RSI, EMA
          ↓
     ┌────┴────┐
     ↓         ↓
-🎯 Scanner  📊 Backtests         ← Analysis & Strategy Testing
-    ↓         ↓
-🌐 Web UI (Dash)                 ← Interactive Dashboard
-    ↓
-🚀 Backtest Manager              ← Batch Backtesting Portal
+📊 Page 2:   🔍 Page 3:          ← Strategy Backtesting & Signal Scanning
+  Backtest     Scanner
 ```
 
-**Critical Step**: The indicator computation (`compute_indicators.py`) is REQUIRED before using any other features. See [First-Time Setup](#first-time-setup-required) below.
+**Critical Step**: The indicator computation (Page 1) is REQUIRED before using any other features.
 
 ## Features
 
 ### Core Capabilities
+- **🆕 Three-Page Workflow**: Clear separation of concerns for better UX
+  - **Indicators Page**: Pre-compute indicators with status tracking
+  - **Backtest Page**: Run strategies with data availability notification
+  - **Scanner Page**: Find opportunities with integrated win rate stats
+- **🆕 Improved Session Management**: Graceful initialization and error handling
+  - No confusing error messages on first load
+  - Auto-recovery from connection issues
+  - Clear user feedback on session status
+- **🆕 Indicator Metadata Tracking**: Track computation history
+  - Last computation date stored in config
+  - Symbol count and status monitoring
+  - Available indicators display
 - **Parquet OHLCV Processing**: Symbol-wise stock price data loading from local filesystem
 - **Technical Indicators**: Comprehensive technical analysis library with 230+ indicators (stored in HDF5/JSON)
   - **EMAs**: 215 periods (2-200, then 250-1000 by 50s)
@@ -34,19 +73,13 @@ A complete, modular stock analysis and backtesting system with web UI. Features 
   - **Momentum Indicators**: Consecutive higher/lower streaks
   - **High/Low Tracking**: Days since previous high/low
   - **Traditional Indicators**: SMA and RSI with configurable periods
-- **🆕 Session Management & Error Handling**: Robust session lifecycle management (See [SESSION_MANAGEMENT_GUIDE.md](SESSION_MANAGEMENT_GUIDE.md))
-  - Automatic health monitoring with 30-minute timeout
-  - User-friendly error messages with recovery instructions
-  - Retry strategy for transient errors
-  - Visual session status indicators in UI
-  - Graceful handling of connection issues
-- **🆕 Dynamic RSI Period Caching**: Scan with ANY RSI period - automatically computed and cached on-demand (See [DYNAMIC_RSI_CACHING.md](DYNAMIC_RSI_CACHING.md))
-- **🆕 Universal Indicator Scanner**: Filter stocks by ANY indicator with flexible operators (>, <, ==, etc.)
+- **Dynamic RSI Period Caching**: Scan with ANY RSI period - automatically computed and cached on-demand (See [DYNAMIC_RSI_CACHING.md](DYNAMIC_RSI_CACHING.md))
+- **Universal Indicator Scanner**: Filter stocks by ANY indicator with flexible operators (>, <, ==, etc.)
   - Candlestick pattern scanning
   - Momentum streak detection
   - Custom EMA/SMA combinations
   - Days since high/low breakouts
-- **🆕 Advanced Backtest Manager Portal**: Professional batch backtesting interface (See [BACKTEST_MANAGER_GUIDE.md](BACKTEST_MANAGER_GUIDE.md))
+- **Advanced Backtest Manager**: Professional batch backtesting interface (See [BACKTEST_MANAGER_GUIDE.md](BACKTEST_MANAGER_GUIDE.md))
   - Multi-select strategies and symbols
   - Batch execution with progress tracking
   - Grouped results (by strategy/symbol)
@@ -58,12 +91,13 @@ A complete, modular stock analysis and backtesting system with web UI. Features 
 - **Numba-Accelerated Backtesting**: Vectorized backtests with comprehensive metrics
   - Win rate, CAGR, Sharpe ratio, max drawdown, expectancy, trade count
   - Results stored as Zarr chunked arrays for efficiency
-- **Live Scanner**: Find stocks matching conditions (e.g., RSI < 20) with backtest cross-reference
-- **Interactive Dash UI**: Web-based interface with dynamic indicator selection
-  - 8 scan types including candlestick patterns, momentum streaks, and custom filters
+- **Live Scanner**: Find stocks matching conditions (e.g., RSI < 20) with backtest cross-reference including win rates
+- **Interactive Dash UI**: Web-based interface with three-page workflow
+  - **Indicators Page**: One-click computation with status tracking and metadata display
+  - **Backtest Page**: Batch strategy testing with data availability notifications
+  - **Scanner Page**: 8 scan types with integrated backtest stats (win rate, Sharpe ratio, etc.)
   - Dynamic indicator dropdown populated from available data
   - Flexible comparison operators for custom filtering
-  - Tabbed interface with Scanner, Backtest Manager, and Quick Backtest
 - **Flexible Deployment**: Run locally, on Google Colab, or deploy as a web service
 
 ### Performance Metrics

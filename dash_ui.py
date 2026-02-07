@@ -6,7 +6,7 @@ Light UI suitable for quick analysis, not optimized for heavy local use.
 """
 
 import dash
-from dash import dcc, html, dash_table
+from dash import dcc, html, dash_table, callback_context
 from dash.dependencies import Input, Output, State
 import dash_bootstrap_components as dbc
 import plotly.graph_objs as go
@@ -126,69 +126,143 @@ class DashUI:
             ], className="page-header"),
             
             # Navigation Tabs
+            # Note: Default tab changed from 'scanner-tab' to 'indicators-tab'
+            # This provides a more logical workflow: Indicators → Backtest → Scanner
             dbc.Tabs([
+                # Indicators Tab
+                dbc.Tab(
+                    label="⚙️ Indicators",
+                    tab_id="indicators-tab",
+                    children=self._create_indicators_layout()
+                ),
+                
+                # Backtest Tab
+                dbc.Tab(
+                    label="📊 Backtest",
+                    tab_id="backtest-tab",
+                    children=self.backtest_manager.create_layout()
+                ),
+                
                 # Scanner Tab
                 dbc.Tab(
                     label="📡 Scanner",
                     tab_id="scanner-tab",
                     children=self._create_scanner_layout()
-                ),
-                
-                # Backtest Manager Tab
-                dbc.Tab(
-                    label="🚀 Backtest Manager",
-                    tab_id="backtest-manager-tab",
-                    children=self.backtest_manager.create_layout()
-                ),
-                
-                # Legacy Backtest Tab
-                dbc.Tab(
-                    label="📊 Quick Backtest",
-                    tab_id="quick-backtest-tab",
-                    children=self._create_quick_backtest_layout()
                 )
-            ], id="main-tabs", active_tab="scanner-tab", className="mb-4")
+            ], id="main-tabs", active_tab="indicators-tab", className="mb-4")
         ], fluid=True, style={'paddingTop': '20px', 'paddingBottom': '40px'})
+    
+    def _create_indicators_layout(self):
+        """Create indicators page layout."""
+        return html.Div([
+            # Summary Panel
+            dbc.Row([
+                dbc.Col([
+                    dbc.Card([
+                        dbc.CardHeader([
+                            html.H4("📊 Indicator Computation Status", className="mb-0")
+                        ]),
+                        dbc.CardBody([
+                            html.Div(id='indicator-summary-panel', children=[
+                                dbc.Row([
+                                    dbc.Col([
+                                        html.Div([
+                                            html.H6("Last Computation", className="text-muted mb-2"),
+                                            html.H4(id='last-computation-date', children="Not computed yet", 
+                                                   className="mb-0")
+                                        ])
+                                    ], width=4),
+                                    dbc.Col([
+                                        html.Div([
+                                            html.H6("Symbols Processed", className="text-muted mb-2"),
+                                            html.H4(id='symbols-count', children="0", 
+                                                   className="mb-0")
+                                        ])
+                                    ], width=4),
+                                    dbc.Col([
+                                        html.Div([
+                                            html.H6("Status", className="text-muted mb-2"),
+                                            html.H4(id='indicator-status-text', children="⚠️ No Data", 
+                                                   className="mb-0 text-warning")
+                                        ])
+                                    ], width=4)
+                                ], className="mb-3"),
+                                html.Hr(),
+                                html.P([
+                                    "Indicators must be computed from your price data before you can run backtests or scans. ",
+                                    "This process analyzes historical OHLCV data and creates technical indicators stored in HDF5 format."
+                                ], className="text-muted small mb-0")
+                            ])
+                        ])
+                    ], className="mb-4", style={'boxShadow': '0 4px 8px rgba(0,0,0,0.1)'})
+                ], width=12)
+            ]),
+            
+            # Compute Indicators Section
+            dbc.Row([
+                dbc.Col([
+                    dbc.Card([
+                        dbc.CardHeader("⚙️ Compute Indicators"),
+                        dbc.CardBody([
+                            html.P([
+                                "Compute technical indicators from Parquet files in ",
+                                html.Code("data/prices/"),
+                                ". This will analyze all available symbols and create indicators including SMA, RSI, EMA, candlestick patterns, and more."
+                            ], className="mb-3"),
+                            
+                            dbc.Row([
+                                dbc.Col([
+                                    dbc.Button(
+                                        "🔧 Compute Indicators",
+                                        id='compute-indicators-btn',
+                                        color="primary",
+                                        size="lg",
+                                        className="me-2"
+                                    ),
+                                    dbc.Button(
+                                        "🔄 Refresh Status",
+                                        id='refresh-symbols-btn',
+                                        color="secondary",
+                                        size="lg",
+                                        outline=True
+                                    ),
+                                ], width="auto")
+                            ], className="mb-3"),
+                            
+                            html.Div(id='indicator-output', className="mt-3", 
+                                    style={'fontSize': '0.9em', 'fontFamily': 'monospace'}),
+                            
+                            dbc.Alert(
+                                id='indicator-computation-alert',
+                                is_open=False,
+                                dismissable=True,
+                                className="mt-3"
+                            )
+                        ])
+                    ], className="mb-4")
+                ], width=12)
+            ]),
+            
+            # Available Indicators Display
+            dbc.Row([
+                dbc.Col([
+                    dbc.Card([
+                        dbc.CardHeader("📋 Available Indicators"),
+                        dbc.CardBody([
+                            html.Div(id='available-indicators-list', children=[
+                                html.P("Compute indicators to see available indicators here.", 
+                                      className="text-muted")
+                            ])
+                        ])
+                    ])
+                ], width=12)
+            ])
+        ])
     
     def _create_scanner_layout(self):
         """Create scanner tab layout."""
         return html.Div([
-            # Indicator computation section
-            dbc.Row([
-                dbc.Col([
-                    dbc.Alert([
-                        html.H5("⚙️ Indicator Management", className="alert-heading"),
-                        html.P([
-                            "Before scanning, ensure indicators are computed from your price data. ",
-                            "Click below to compute/refresh indicators from Parquet files in ",
-                            html.Code("data/prices/"), "."
-                        ]),
-                        html.Hr(),
-                        dbc.Row([
-                            dbc.Col([
-                                dbc.Button(
-                                    "🔧 Compute Indicators",
-                                    id='compute-indicators-btn',
-                                    color="warning",
-                                    className="me-2",
-                                    outline=True
-                                ),
-                                dbc.Button(
-                                    "🔄 Refresh Symbol List",
-                                    id='refresh-symbols-btn',
-                                    color="secondary",
-                                    outline=True
-                                ),
-                            ], width="auto"),
-                            dbc.Col([
-                                html.Div(id='indicator-status', className="text-end")
-                            ])
-                        ], align="center", className="g-2"),
-                        html.Div(id='indicator-output', className="mt-2", style={'fontSize': '0.9em'})
-                    ], color="info", className="mb-3")
-                ], width=12)
-            ]),
-            
+            # Scanner Configuration and Results
             dbc.Row([
                 dbc.Col([
                     dbc.Card([
@@ -435,9 +509,19 @@ class DashUI:
              Input('session-id-store', 'data')]
         )
         def check_session_health(n_intervals, session_id):
-            """Periodic health check of the session."""
+            """
+            Periodic health check of the session.
+            
+            Note: On initial load (n_intervals == 0), no alert is shown to avoid
+            confusing users with error messages before the session is fully initialized.
+            """
             if not session_id:
-                # No session - show prominent "Start New Session" banner
+                # No session - this is unusual, but can happen on first load
+                # Don't show error on initial load (n_intervals == 0)
+                if n_intervals == 0:
+                    return None
+                
+                # Show prominent "Start New Session" banner
                 return dbc.Alert([
                     html.Div([
                         html.H5("🔔 Session Not Found", className="alert-heading mb-3"),
@@ -460,6 +544,19 @@ class DashUI:
                     ])
                 ], color="warning", dismissable=False, className="mb-4", 
                    style={'border': '2px solid #ff9800', 'boxShadow': '0 4px 8px rgba(0,0,0,0.1)'})
+            
+            # Check if session exists in manager
+            try:
+                session_state = self.session_manager.get_session(session_id)
+                if session_state is None:
+                    # Session doesn't exist in manager - create it silently
+                    self.session_manager.create_session(
+                        session_id,
+                        metadata={'type': 'dash_ui_auto', 'indicator_path': self.indicator_engine.storage_path}
+                    )
+            except Exception as e:
+                # Silently handle session creation errors
+                pass
             
             # Update session activity
             self.session_manager.update_session_activity(session_id)
@@ -897,23 +994,236 @@ class DashUI:
                     ])
                 ]), html.Span("❌ Error", className="badge bg-danger")
         
+        
+        # New callbacks for Indicators page
         @self.app.callback(
-            Output('indicator-status', 'children', allow_duplicate=True),
-            Input('refresh-symbols-btn', 'n_clicks'),
-            prevent_initial_call=True
+            [Output('last-computation-date', 'children'),
+             Output('symbols-count', 'children'),
+             Output('indicator-status-text', 'children'),
+             Output('indicator-status-text', 'className'),
+             Output('available-indicators-list', 'children')],
+            [Input('health-check-interval', 'n_intervals'),
+             Input('compute-indicators-btn', 'n_clicks'),
+             Input('refresh-symbols-btn', 'n_clicks')]
         )
-        def refresh_symbols(n_clicks):
-            """Refresh the count of available symbols."""
-            if n_clicks is None:
-                return ""
+        def update_indicator_summary(n_intervals, compute_clicks, refresh_clicks):
+            """Update the indicator summary panel with current status."""
+            from datetime import datetime
             
             try:
-                available = self.indicator_engine.list_available_symbols()
-                if not available:
-                    return html.Span("⚠️ No symbols", className="badge bg-warning")
-                return html.Span(f"✅ {len(available)} symbols", className="badge bg-success")
+                metadata = self.indicator_engine.get_metadata()
+                symbols = self.indicator_engine.list_available_symbols()
+                symbols_count = len(symbols)
+                
+                # Format last computation date
+                last_computed = metadata.get('last_computation_date')
+                if last_computed:
+                    try:
+                        dt = datetime.fromisoformat(last_computed)
+                        date_str = dt.strftime('%B %d, %Y at %I:%M %p')
+                    except:
+                        date_str = last_computed
+                else:
+                    date_str = "Not computed yet"
+                
+                # Determine status
+                if symbols_count > 0:
+                    status_text = "✅ Ready"
+                    status_class = "mb-0 text-success"
+                else:
+                    status_text = "⚠️ No Data"
+                    status_class = "mb-0 text-warning"
+                
+                # Build available indicators list
+                if symbols_count > 0:
+                    config = self.indicator_engine.get_config()
+                    
+                    # Get a sample symbol to see what indicators are available
+                    sample_symbol = symbols[0] if symbols else None
+                    if sample_symbol and sample_symbol in config:
+                        symbol_config = config[sample_symbol]
+                        
+                        indicators_list = []
+                        
+                        # SMA
+                        if 'sma_periods' in symbol_config:
+                            sma_periods = symbol_config['sma_periods']
+                            indicators_list.append(
+                                html.Li([html.Strong("SMA: "), f"{len(sma_periods)} periods ({', '.join(map(str, sma_periods))})"])
+                            )
+                        
+                        # RSI
+                        if 'rsi_periods' in symbol_config:
+                            rsi_periods = symbol_config['rsi_periods']
+                            indicators_list.append(
+                                html.Li([html.Strong("RSI: "), f"{len(rsi_periods)} periods ({', '.join(map(str, rsi_periods))})"])
+                            )
+                        
+                        # EMA
+                        if 'ema_periods' in symbol_config:
+                            ema_count = len(symbol_config['ema_periods'])
+                            indicators_list.append(
+                                html.Li([html.Strong("EMA: "), f"{ema_count} periods (2-200, 250-1000 by 50s)"])
+                            )
+                        
+                        # Candlestick patterns
+                        if symbol_config.get('candlestick_patterns', False):
+                            indicators_list.append(
+                                html.Li([html.Strong("Candlestick Patterns: "), "12 patterns (hammer, doji, engulfing, etc.)"])
+                            )
+                        
+                        # Streak indicators
+                        if symbol_config.get('streak_indicators', False):
+                            indicators_list.append(
+                                html.Li([html.Strong("Momentum Streaks: "), "Consecutive higher/lower highs and lows"])
+                            )
+                        
+                        # High/Low days
+                        if symbol_config.get('high_low_days', False):
+                            indicators_list.append(
+                                html.Li([html.Strong("Breakout Tracking: "), "Days since previous high/low"])
+                            )
+                        
+                        indicators_display = html.Div([
+                            html.H6("Computed Indicators:", className="mb-2"),
+                            html.Ul(indicators_list, className="mb-0")
+                        ])
+                    else:
+                        indicators_display = html.P("No indicator details available.", className="text-muted")
+                else:
+                    indicators_display = html.P("Compute indicators to see available indicators here.", 
+                                               className="text-muted")
+                
+                return date_str, str(symbols_count), status_text, status_class, indicators_display
+                
             except Exception as e:
-                return html.Span(f"❌ Error: {str(e)}", className="badge bg-danger")
+                return "Error", "0", "❌ Error", "mb-0 text-danger", html.P(f"Error: {str(e)}", className="text-danger")
+        
+        @self.app.callback(
+            [Output('indicator-output', 'children'),
+             Output('indicator-computation-alert', 'children'),
+             Output('indicator-computation-alert', 'color'),
+             Output('indicator-computation-alert', 'is_open')],
+            Input('compute-indicators-btn', 'n_clicks'),
+            prevent_initial_call=True
+        )
+        def compute_indicators(n_clicks):
+            """Compute indicators from price data."""
+            if n_clicks is None:
+                return "", "", "info", False
+            
+            try:
+                from data_loader import DataLoader
+                import os
+                
+                # Determine data path - try common locations
+                data_path = None
+                for path in DEFAULT_DATA_PATHS:
+                    if os.path.exists(path):
+                        data_path = path
+                        break
+                
+                if data_path is None:
+                    return (
+                        html.Div([
+                            html.P("❌ No price data directory found.", className="text-danger mb-1"),
+                            html.P("Expected directories: data/prices/ or data/stock_data/", 
+                                   className="text-muted small")
+                        ]),
+                        "Price data directory not found. Please ensure Parquet files exist in data/prices/ or data/stock_data/",
+                        "danger",
+                        True
+                    )
+                
+                # Load data
+                loader = DataLoader(data_path)
+                symbols = loader.list_available_symbols()
+                
+                if not symbols:
+                    return (
+                        html.Div([
+                            html.P("❌ No Parquet files found in data directory.", className="text-danger mb-1"),
+                            html.P(f"Location: {data_path}", className="text-muted small")
+                        ]),
+                        f"No Parquet files found in {data_path}. Please add price data files.",
+                        "danger",
+                        True
+                    )
+                
+                # Show progress
+                output_msg = html.Div([
+                    html.P(f"⏳ Processing {len(symbols)} symbols from {data_path}...", 
+                           className="mb-1 text-info"),
+                    html.P("Computing indicators: SMA, RSI, EMA, candlestick patterns, momentum streaks...", 
+                           className="text-muted small")
+                ])
+                
+                # Load data
+                data_dict = loader.load_multiple_symbols(symbols)
+                
+                if not data_dict:
+                    return (
+                        html.Div([
+                            html.P("❌ Failed to load any symbols.", className="text-danger mb-1"),
+                            html.P("Check that Parquet files have correct OHLCV columns.", 
+                                   className="text-muted small")
+                        ]),
+                        "Failed to load symbols. Check that Parquet files have correct OHLCV columns.",
+                        "danger",
+                        True
+                    )
+                
+                # Compute indicators
+                self.indicator_engine.process_multiple_symbols(
+                    data_dict,
+                    sma_periods=[20, 50, 200],
+                    rsi_periods=[7, 14, 21, 28],
+                    show_progress=False  # Disable progress bar in UI
+                )
+                
+                # Verify results
+                available = self.indicator_engine.list_available_symbols()
+                
+                return (
+                    html.Div([
+                        html.P("✅ Indicators computed successfully!", className="text-success fw-bold mb-2"),
+                        html.Ul([
+                            html.Li(f"Processed {len(available)} symbols"),
+                            html.Li("Computed SMA (20, 50, 200 periods)"),
+                            html.Li("Computed RSI (7, 14, 21, 28 periods)"),
+                            html.Li("Computed 215 EMA periods (2-200, 250-1000 by 50s)"),
+                            html.Li("Detected 12 candlestick patterns"),
+                            html.Li("Computed momentum streak indicators"),
+                            html.Li("Tracked breakout indicators (days since high/low)")
+                        ], className="mb-2"),
+                        html.P([
+                            "✅ You can now use the ",
+                            html.Strong("Backtest"),
+                            " and ",
+                            html.Strong("Scanner"),
+                            " pages."
+                        ], className="text-success small mb-0")
+                    ]),
+                    f"Successfully computed indicators for {len(available)} symbols!",
+                    "success",
+                    True
+                )
+            
+            except Exception as e:
+                import traceback
+                error_details = traceback.format_exc()
+                return (
+                    html.Div([
+                        html.P(f"❌ Error: {str(e)}", className="text-danger mb-1"),
+                        html.Details([
+                            html.Summary("Show details", className="small text-muted"),
+                            html.Pre(error_details, className="small bg-light p-2 mt-2")
+                        ])
+                    ]),
+                    f"Error computing indicators: {str(e)}",
+                    "danger",
+                    True
+                )
         
         @self.app.callback(
             [Output('backtest-details-div', 'children'),

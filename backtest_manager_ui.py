@@ -1398,14 +1398,65 @@ class BacktestManagerUI:
                 except Exception as e:
                     logger.error(f"_create_trade_details_view: Error creating trades table: {str(e)}")
                     trades_table = dbc.Alert("Error displaying trade details table.", color="warning")
-            else:
+            elif trades_df is not None and len(trades_df) == 0:
+                # Explicitly empty DataFrame - trades were stored but none occurred
+                logger.info("_create_trade_details_view: Backtest has no trades (empty DataFrame)")
                 trades_table = dbc.Alert(
                     [
-                        html.H6("No Trade Data Available", className="alert-heading"),
-                        html.P("This backtest did not generate any trades, or trade data was not stored."),
+                        html.H6("📊 No Trades Generated", className="alert-heading"),
+                        html.P([
+                            "This backtest completed successfully but did not generate any trades. ",
+                            "This could happen when:"
+                        ]),
+                        html.Ul([
+                            html.Li("Strategy conditions were never met during the backtest period"),
+                            html.Li("The selected parameters were too conservative"),
+                            html.Li("Market conditions did not trigger entry signals"),
+                        ]),
+                        html.P([
+                            html.Strong("Note: "),
+                            "This is not an error. Try adjusting strategy parameters or using a different time period."
+                        ])
                     ],
-                    color="info"
+                    color="warning"
                 )
+            else:
+                # trades is None - data was not stored or is missing
+                logger.warning("_create_trade_details_view: Trade data is None - may be missing from storage")
+                num_trades = int(metrics.get('num_trades', 0))
+                
+                # Check if num_trades suggests trades should exist
+                if num_trades > 0:
+                    trades_table = dbc.Alert(
+                        [
+                            html.H6("⚠️ Trade Data Missing", className="alert-heading"),
+                            html.P([
+                                f"The backtest metrics indicate {num_trades} trades occurred, ",
+                                "but trade-by-trade details are not available."
+                            ]),
+                            html.P("Possible causes:"),
+                            html.Ul([
+                                html.Li("Trade data was not stored during backtest execution"),
+                                html.Li("Data storage was interrupted"),
+                                html.Li("Backtest was run with an older version without trade tracking"),
+                                html.Li("Data was cleared or corrupted")
+                            ]),
+                            html.P([
+                                html.Strong("Recommendation: "),
+                                "Re-run the backtest to generate fresh trade data."
+                            ])
+                        ],
+                        color="danger"
+                    )
+                else:
+                    # No trades according to metrics, and no trade data
+                    trades_table = dbc.Alert(
+                        [
+                            html.H6("No Trade Data Available", className="alert-heading"),
+                            html.P("This backtest did not generate any trades."),
+                        ],
+                        color="info"
+                    )
             
             # Assemble all sections
             sections = [summary_section]

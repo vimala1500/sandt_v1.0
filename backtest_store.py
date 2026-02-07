@@ -188,28 +188,39 @@ class BacktestStore:
                 equity_data.attrs['positions'] = positions.tolist()
         
         # Store trade details if provided
-        if trades is not None and len(trades) > 0:
-            trade_group = self.root['trade_details']
-            if backtest_id in trade_group:
-                del trade_group[backtest_id]
-            
-            # Convert DataFrame to JSON-serializable dict
-            trades_dict = trades.to_dict('records')
-            # Convert any datetime objects to strings
-            for trade in trades_dict:
-                for key, value in trade.items():
-                    if pd.api.types.is_datetime64_any_dtype(type(value)) or isinstance(value, (pd.Timestamp, np.datetime64)):
-                        trade[key] = str(value)
-            
-            # Store as JSON in a text array
-            trades_json = json.dumps(trades_dict)
-            # Use a simple string array
-            trade_data = trade_group.create_dataset(
-                backtest_id,
-                shape=(1,),
-                dtype=f'U{len(trades_json)}'  # Unicode string with appropriate length
-            )
-            trade_data[0] = trades_json
+        # Always store trades if provided, even if empty - this lets us distinguish
+        # between "no trades occurred" vs "trade data not stored/missing"
+        if trades is not None:
+            try:
+                trade_group = self.root['trade_details']
+                if backtest_id in trade_group:
+                    del trade_group[backtest_id]
+                
+                # Convert DataFrame to JSON-serializable dict
+                trades_dict = trades.to_dict('records')
+                # Convert any datetime objects to strings
+                for trade in trades_dict:
+                    for key, value in trade.items():
+                        if pd.api.types.is_datetime64_any_dtype(type(value)) or isinstance(value, (pd.Timestamp, np.datetime64)):
+                            trade[key] = str(value)
+                
+                # Store as JSON in a text array
+                trades_json = json.dumps(trades_dict)
+                # Use a simple string array with sufficient length
+                # Add buffer of 100 chars for safety
+                trade_data = trade_group.create_dataset(
+                    backtest_id,
+                    shape=(1,),
+                    dtype=f'U{len(trades_json) + 100}'
+                )
+                trade_data[0] = trades_json
+                
+                logger.info(f"store_backtest: Stored {len(trades)} trades for {backtest_id}")
+            except Exception as e:
+                logger.error(f"store_backtest: Failed to store trades for {backtest_id}: {str(e)}", exc_info=True)
+                # Continue without failing the entire storage operation
+        else:
+            logger.debug(f"store_backtest: No trades provided for {backtest_id}")
         
         return backtest_id
     
@@ -349,7 +360,14 @@ class BacktestStore:
             try:
                 trade_group = self.root.get('trade_details')
                 if trade_group is not None and backtest_id in trade_group:
-                    trade_json = trade_group[backtest_id][0]
+                    trade_data = trade_group[backtest_id]
+                    # Extract string from zarr array - handle both old and new zarr versions
+                    if hasattr(trade_data, 'shape') and trade_data.shape == (1,):
+                        trade_json = str(trade_data[0])
+                    else:
+                        trade_json = str(trade_data[:])
+                    
+                    # Parse JSON and create DataFrame
                     trades_dict = json.loads(trade_json)
                     result['trades'] = pd.DataFrame(trades_dict)
                     logger.debug(f"get_detailed_results: Loaded {len(result['trades'])} trades for {backtest_id}")

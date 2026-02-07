@@ -775,6 +775,9 @@ Additional documentation files:
 - **[INDICATOR_CACHING.md](INDICATOR_CACHING.md)** - Complete guide to indicator caching/storage system
 - **[QUICK_REFERENCE.md](QUICK_REFERENCE.md)** - Quick reference for all modules and methods
 - **[RSI_VERIFICATION.md](RSI_VERIFICATION.md)** - RSI calculation verification and TradingView comparison
+- **[docs/UI_ENHANCEMENTS.md](docs/UI_ENHANCEMENTS.md)** - 🆕 UI/UX enhancements guide with modern design details
+- **[docs/SESSION_TROUBLESHOOTING.md](docs/SESSION_TROUBLESHOOTING.md)** - 🆕 Session management troubleshooting guide
+- **[docs/DESIGN_DOC.md](docs/DESIGN_DOC.md)** - 🆕 Complete design system documentation with before/after comparisons
 
 Run `python demo_caching.py` to see the caching system in action with live performance metrics.
 

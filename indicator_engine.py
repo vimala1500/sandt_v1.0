@@ -531,7 +531,7 @@ class IndicatorEngine:
             config['_metadata'] = {}
         
         config['_metadata']['last_computation_date'] = datetime.now().isoformat()
-        config['_metadata']['symbols_count'] = len([k for k in config.keys() if k != '_metadata'])
+        config['_metadata']['symbols_count'] = sum(1 for k in config.keys() if k != '_metadata')
         
         with open(self.config_path, 'w') as f:
             json.dump(config, f, indent=2)

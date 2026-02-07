@@ -126,6 +126,8 @@ class DashUI:
             ], className="page-header"),
             
             # Navigation Tabs
+            # Note: Default tab changed from 'scanner-tab' to 'indicators-tab'
+            # This provides a more logical workflow: Indicators → Backtest → Scanner
             dbc.Tabs([
                 # Indicators Tab
                 dbc.Tab(
@@ -507,7 +509,12 @@ class DashUI:
              Input('session-id-store', 'data')]
         )
         def check_session_health(n_intervals, session_id):
-            """Periodic health check of the session."""
+            """
+            Periodic health check of the session.
+            
+            Note: On initial load (n_intervals == 0), no alert is shown to avoid
+            confusing users with error messages before the session is fully initialized.
+            """
             if not session_id:
                 # No session - this is unusual, but can happen on first load
                 # Don't show error on initial load (n_intervals == 0)

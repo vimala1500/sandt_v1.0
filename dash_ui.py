@@ -74,143 +74,21 @@ class DashUI:
             session_manager=self.session_manager
         )
         
-        # Initialize Dash app with custom CSS
+        # Initialize Dash app with dark theme CSS
         external_stylesheets = [
-            dbc.themes.BOOTSTRAP,
-            'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap'
+            'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap',
+            'https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap'
         ]
         
         self.app = dash.Dash(
             __name__,
             external_stylesheets=external_stylesheets,
-            suppress_callback_exceptions=True
+            suppress_callback_exceptions=True,
+            assets_folder='assets'
         )
         
-        # Add custom CSS via app index string
-        self.app.index_string = '''
-<!DOCTYPE html>
-<html>
-    <head>
-        {%metas%}
-        <title>{%title%}</title>
-        {%favicon%}
-        {%css%}
-        <style>
-            /* Modern color scheme and typography */
-            body {
-                font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-            }
-            
-            .card {
-                border-radius: 12px;
-                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
-                transition: transform 0.2s, box-shadow 0.2s;
-                border: none;
-            }
-            
-            .card:hover {
-                transform: translateY(-2px);
-                box-shadow: 0 8px 12px rgba(0, 0, 0, 0.12);
-            }
-            
-            .card-header {
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                color: white;
-                border-radius: 12px 12px 0 0 !important;
-                padding: 15px 20px;
-                border: none;
-            }
-            
-            .btn {
-                border-radius: 8px;
-                font-weight: 500;
-                transition: all 0.2s;
-                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-            }
-            
-            .btn:hover {
-                transform: translateY(-1px);
-                box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
-            }
-            
-            .nav-tabs .nav-link {
-                border-radius: 8px 8px 0 0;
-                font-weight: 500;
-                transition: all 0.2s;
-            }
-            
-            .nav-tabs .nav-link.active {
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                color: white !important;
-                border: none;
-            }
-            
-            .alert {
-                border-radius: 10px;
-                border-left: 4px solid;
-            }
-            
-            h1, h2, h3, h4, h5 {
-                font-weight: 600;
-                color: #2c3e50;
-            }
-            
-            .main-title {
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                -webkit-background-clip: text;
-                -webkit-text-fill-color: transparent;
-                background-clip: text;
-                font-weight: 700;
-            }
-            
-            /* Table styling improvements */
-            .dash-table-container {
-                border-radius: 8px;
-                overflow: hidden;
-            }
-            
-            .dash-spreadsheet-container .dash-spreadsheet-inner tr:hover {
-                background-color: #e3f2fd !important;
-            }
-            
-            /* Mobile responsiveness */
-            @media (max-width: 768px) {
-                .card {
-                    margin-bottom: 1rem;
-                }
-                
-                h1 {
-                    font-size: 1.75rem;
-                }
-                
-                .btn {
-                    width: 100%;
-                    margin-bottom: 0.5rem;
-                }
-            }
-            
-            /* Animation for loading states */
-            @keyframes pulse {
-                0%, 100% { opacity: 1; }
-                50% { opacity: 0.5; }
-            }
-            
-            .loading {
-                animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-            }
-        </style>
-    </head>
-    <body>
-        {%app_entry%}
-        <footer>
-            {%config%}
-            {%scripts%}
-            {%renderer%}
-        </footer>
-    </body>
-</html>
-'''
+        # Set app title
+        self.app.title = "Quant Dashboard - Stock Analysis & Trading"
         
         self._setup_layout()
         self._setup_callbacks()
@@ -231,16 +109,21 @@ class DashUI:
             # Hidden store for session ID
             dcc.Store(id='session-id-store', data=self.session_id),
             
-            dbc.Row([
-                dbc.Col([
-                    html.H1("Stock Scanner & Backtest Analyzer", 
-                           className="text-center mb-2 main-title",
-                           style={'fontSize': '2.5rem'}),
-                    html.P("Professional Trading Strategy Analysis Platform", 
-                          className="text-center text-muted mb-4",
-                          style={'fontSize': '1.1rem', 'fontWeight': '300'})
-                ], width=12)
-            ]),
+            # Header Section
+            html.Div([
+                dbc.Row([
+                    dbc.Col([
+                        html.Div([
+                            html.H1("📊 Quantitative Trading Dashboard", 
+                                   className="text-center mb-2 main-title",
+                                   style={'fontSize': '2.5rem'}),
+                            html.P("Professional Stock Analysis & Backtesting Platform", 
+                                  className="text-center mb-4",
+                                  style={'fontSize': '1.1rem', 'fontWeight': '300', 'color': 'var(--text-secondary)'})
+                        ])
+                    ], width=12)
+                ], className="mb-4")
+            ], className="page-header"),
             
             # Navigation Tabs
             dbc.Tabs([

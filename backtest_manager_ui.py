@@ -15,6 +15,7 @@ Features:
 
 import json
 import io
+import logging
 from typing import List, Dict, Any, Optional
 import pandas as pd
 import numpy as np
@@ -28,6 +29,9 @@ from backtest_engine import BacktestEngine
 from strategy import StrategyConfig, StrategyRegistry
 from indicator_engine import IndicatorEngine
 from error_handler import safe_execute, get_user_friendly_error
+
+# Configure logger
+logger = logging.getLogger(__name__)
 
 
 class BacktestManagerUI:
@@ -665,66 +669,147 @@ class BacktestManagerUI:
         )
         def show_trade_details(strategy_active_cells, symbol_active_cells, close_clicks, 
                               strategy_data_list, symbol_data_list, is_open):
-            """Display trade-by-trade details when a row is clicked."""
-            ctx = callback_context
-            
-            if not ctx.triggered:
-                return False, "", ""
-            
-            trigger_id = ctx.triggered[0]['prop_id']
-            
-            # Close button clicked
-            if 'close-trade-modal-btn' in trigger_id:
-                return False, "", ""
-            
-            # Find which table was clicked
-            clicked_row_data = None
-            
-            # Check strategy tables
-            for i, active_cell in enumerate(strategy_active_cells or []):
-                if active_cell and strategy_data_list and i < len(strategy_data_list):
-                    data = strategy_data_list[i]
-                    if data and active_cell['row'] < len(data):
-                        clicked_row_data = data[active_cell['row']]
-                        break
-            
-            # Check symbol tables if not found
-            if not clicked_row_data:
-                for i, active_cell in enumerate(symbol_active_cells or []):
-                    if active_cell and symbol_data_list and i < len(symbol_data_list):
-                        data = symbol_data_list[i]
+            """Display trade-by-trade details when a row is clicked with robust error handling."""
+            try:
+                ctx = callback_context
+                
+                if not ctx.triggered:
+                    logger.debug("show_trade_details: No trigger detected")
+                    return False, "", ""
+                
+                trigger_id = ctx.triggered[0]['prop_id']
+                logger.info(f"show_trade_details: Triggered by {trigger_id}")
+                
+                # Close button clicked
+                if 'close-trade-modal-btn' in trigger_id:
+                    logger.debug("show_trade_details: Close button clicked")
+                    return False, "", ""
+                
+                # Find which table was clicked
+                clicked_row_data = None
+                
+                # Check strategy tables
+                for i, active_cell in enumerate(strategy_active_cells or []):
+                    if active_cell and strategy_data_list and i < len(strategy_data_list):
+                        data = strategy_data_list[i]
                         if data and active_cell['row'] < len(data):
                             clicked_row_data = data[active_cell['row']]
+                            logger.info(f"show_trade_details: Found clicked row in strategy table {i}, row {active_cell['row']}")
                             break
-            
-            if not clicked_row_data:
-                return False, "", ""
-            
-            # Extract backtest identifiers
-            symbol = clicked_row_data.get('symbol', '')
-            strategy = clicked_row_data.get('strategy', '')
-            params = clicked_row_data.get('params', {})
-            exit_rule = clicked_row_data.get('exit_rule', 'default')
-            
-            # Get detailed results from store
-            detailed_results = self.backtest_engine.store.get_detailed_results(
-                symbol=symbol,
-                strategy=strategy,
-                params=params,
-                exit_rule=exit_rule
-            )
-            
-            if not detailed_results:
-                return True, "⚠️ Trade Details Not Available", html.P(
-                    "Unable to load trade details for this backtest.",
-                    className="text-warning"
+                
+                # Check symbol tables if not found
+                if not clicked_row_data:
+                    for i, active_cell in enumerate(symbol_active_cells or []):
+                        if active_cell and symbol_data_list and i < len(symbol_data_list):
+                            data = symbol_data_list[i]
+                            if data and active_cell['row'] < len(data):
+                                clicked_row_data = data[active_cell['row']]
+                                logger.info(f"show_trade_details: Found clicked row in symbol table {i}, row {active_cell['row']}")
+                                break
+                
+                if not clicked_row_data:
+                    logger.warning("show_trade_details: No clicked row data found")
+                    return False, "", ""
+                
+                # Extract and validate backtest identifiers
+                symbol = clicked_row_data.get('symbol', '')
+                strategy = clicked_row_data.get('strategy', '')
+                params = clicked_row_data.get('params', {})
+                exit_rule = clicked_row_data.get('exit_rule', 'default')
+                
+                # Validate required fields
+                if not symbol or not strategy:
+                    logger.error(f"show_trade_details: Missing required fields - symbol: '{symbol}', strategy: '{strategy}'")
+                    return True, "❌ Invalid Data", dbc.Alert(
+                        "The selected row is missing required information (symbol or strategy). "
+                        "Please refresh the page and try again.",
+                        color="danger"
+                    )
+                
+                # Validate params is a dictionary
+                if not isinstance(params, dict):
+                    logger.warning(f"show_trade_details: Invalid params type: {type(params)}, converting to dict")
+                    params = {} if params is None else dict(params)
+                
+                logger.info(f"show_trade_details: Retrieving results for {symbol} - {strategy} with exit_rule: {exit_rule}")
+                
+                # Get detailed results from store with error handling
+                try:
+                    detailed_results = self.backtest_engine.store.get_detailed_results(
+                        symbol=symbol,
+                        strategy=strategy,
+                        params=params,
+                        exit_rule=exit_rule
+                    )
+                except Exception as e:
+                    logger.error(f"show_trade_details: Error retrieving detailed results: {str(e)}", exc_info=True)
+                    return True, "❌ Data Retrieval Error", dbc.Alert(
+                        [
+                            html.H5("Failed to retrieve trade details", className="alert-heading"),
+                            html.P(f"An error occurred while loading data for {symbol} - {strategy}."),
+                            html.Hr(),
+                            html.P(f"Error: {get_user_friendly_error(e)}", className="mb-0")
+                        ],
+                        color="danger"
+                    )
+                
+                if not detailed_results:
+                    logger.warning(f"show_trade_details: No detailed results found for {symbol} - {strategy}")
+                    return True, "⚠️ Trade Details Not Available", dbc.Alert(
+                        [
+                            html.H5("No Trade Details Found", className="alert-heading"),
+                            html.P([
+                                "Unable to load trade details for ",
+                                html.Strong(f"{symbol} - {strategy}"),
+                                "."
+                            ]),
+                            html.Hr(),
+                            html.P([
+                                "This backtest may not have detailed trade data stored. ",
+                                "Common reasons:",
+                                html.Ul([
+                                    html.Li("The backtest was run before detailed tracking was enabled"),
+                                    html.Li("The backtest resulted in no trades"),
+                                    html.Li("The data may have been cleared or corrupted")
+                                ])
+                            ], className="mb-0")
+                        ],
+                        color="warning"
+                    )
+                
+                # Create modal content with error handling
+                try:
+                    modal_title = f"📊 Trade Details: {symbol} - {strategy} ({exit_rule})"
+                    modal_body = self._create_trade_details_view(detailed_results)
+                    logger.info(f"show_trade_details: Successfully created modal for {symbol} - {strategy}")
+                    return True, modal_title, modal_body
+                except Exception as e:
+                    logger.error(f"show_trade_details: Error creating modal view: {str(e)}", exc_info=True)
+                    return True, f"⚠️ Display Error: {symbol} - {strategy}", dbc.Alert(
+                        [
+                            html.H5("Error Displaying Trade Details", className="alert-heading"),
+                            html.P("The trade data was retrieved but could not be displayed properly."),
+                            html.Hr(),
+                            html.P(f"Technical details: {str(e)}", className="mb-0 text-muted small")
+                        ],
+                        color="warning"
+                    )
+                
+            except Exception as e:
+                # Catch-all for any unexpected errors
+                logger.error(f"show_trade_details: Unexpected error in callback: {str(e)}", exc_info=True)
+                return True, "❌ Unexpected Error", dbc.Alert(
+                    [
+                        html.H5("An Unexpected Error Occurred", className="alert-heading"),
+                        html.P("We encountered an unexpected issue while loading the trade details."),
+                        html.Hr(),
+                        html.P([
+                            "Please try again. If the problem persists, contact support with this error: ",
+                            html.Code(str(e))
+                        ], className="mb-0")
+                    ],
+                    color="danger"
                 )
-            
-            # Create modal content
-            modal_title = f"📊 Trade Details: {symbol} - {strategy} ({exit_rule})"
-            modal_body = self._create_trade_details_view(detailed_results)
-            
-            return True, modal_title, modal_body
         
         @app.callback(
             Output('download-trades', 'data'),
@@ -1007,242 +1092,344 @@ class BacktestManagerUI:
         return html.Div(grouped_tables)
     
     def _create_trade_details_view(self, detailed_results: Dict) -> html.Div:
-        """Create comprehensive trade-by-trade details view with summary metrics and visualizations."""
-        metrics = detailed_results.get('metrics', {})
-        trades = detailed_results.get('trades')
-        equity_curve = detailed_results.get('equity_curve')
-        dates = detailed_results.get('dates', [])
+        """Create comprehensive trade-by-trade details view with summary metrics and visualizations.
         
-        # Convert trades to DataFrame if it isn't already
-        if trades is not None and not isinstance(trades, pd.DataFrame):
-            trades_df = pd.DataFrame(trades)
-        else:
-            trades_df = trades
-        
-        # Summary metrics section
-        summary_section = dbc.Card([
-            dbc.CardHeader(html.H5("📈 Summary Metrics", className="mb-0")),
-            dbc.CardBody([
-                dbc.Row([
-                    dbc.Col([
-                        html.P([
-                            html.Strong("Win Rate: "),
-                            f"{metrics.get('win_rate', 0)*100:.2f}%"
-                        ], className="mb-2"),
-                        html.P([
-                            html.Strong("Total Trades: "),
-                            f"{metrics.get('num_trades', 0)}"
-                        ], className="mb-2"),
-                        html.P([
-                            html.Strong("CAGR: "),
-                            f"{metrics.get('cagr', 0)*100:.2f}%"
-                        ], className="mb-2")
-                    ], md=3),
-                    dbc.Col([
-                        html.P([
-                            html.Strong("Sharpe Ratio: "),
-                            f"{metrics.get('sharpe_ratio', 0):.2f}"
-                        ], className="mb-2"),
-                        html.P([
-                            html.Strong("Max Drawdown: "),
-                            f"{metrics.get('max_drawdown', 0)*100:.2f}%"
-                        ], className="mb-2"),
-                        html.P([
-                            html.Strong("Total Return: "),
-                            f"{metrics.get('total_return', 0)*100:.2f}%"
-                        ], className="mb-2")
-                    ], md=3),
-                    dbc.Col([
-                        html.P([
-                            html.Strong("Expectancy: "),
-                            f"{metrics.get('expectancy', 0)*100:.2f}%"
-                        ], className="mb-2")
-                    ], md=3)
-                ])
-            ])
-        ], className="mb-3")
-        
-        # Calculate additional trade statistics if trades exist
-        trade_stats_section = None
-        if trades_df is not None and len(trades_df) > 0:
-            winning_trades = trades_df[trades_df['P&L %'] > 0]
-            losing_trades = trades_df[trades_df['P&L %'] <= 0]
+        Includes robust error handling for data processing and visualization.
+        """
+        try:
+            # Validate input
+            if not detailed_results or not isinstance(detailed_results, dict):
+                logger.error("_create_trade_details_view: Invalid detailed_results input")
+                return dbc.Alert("Invalid data format received.", color="danger")
             
-            avg_win = winning_trades['P&L %'].mean() if len(winning_trades) > 0 else 0
-            avg_loss = losing_trades['P&L %'].mean() if len(losing_trades) > 0 else 0
-            avg_holding = trades_df['Holding Period'].mean()
+            metrics = detailed_results.get('metrics', {})
+            trades = detailed_results.get('trades')
+            equity_curve = detailed_results.get('equity_curve')
+            dates = detailed_results.get('dates', [])
             
-            trade_stats_section = dbc.Card([
-                dbc.CardHeader(html.H5("📊 Trade Statistics", className="mb-0")),
-                dbc.CardBody([
-                    dbc.Row([
-                        dbc.Col([
-                            html.P([
-                                html.Strong("Winning Trades: "),
-                                f"{len(winning_trades)}"
-                            ], className="mb-2"),
-                            html.P([
-                                html.Strong("Losing Trades: "),
-                                f"{len(losing_trades)}"
-                            ], className="mb-2")
-                        ], md=3),
-                        dbc.Col([
-                            html.P([
-                                html.Strong("Avg Win: "),
-                                f"{avg_win*100:.2f}%"
-                            ], className="mb-2"),
-                            html.P([
-                                html.Strong("Avg Loss: "),
-                                f"{avg_loss*100:.2f}%"
-                            ], className="mb-2")
-                        ], md=3),
-                        dbc.Col([
-                            html.P([
-                                html.Strong("Profit Factor: "),
-                                f"{abs(avg_win/avg_loss):.2f}" if avg_loss != 0 else "N/A"
-                            ], className="mb-2"),
-                            html.P([
-                                html.Strong("Avg Holding Period: "),
-                                f"{avg_holding:.1f} days"
-                            ], className="mb-2")
-                        ], md=3)
+            # Validate metrics
+            if not isinstance(metrics, dict):
+                logger.warning("_create_trade_details_view: Invalid metrics format, using defaults")
+                metrics = {}
+            
+            # Convert trades to DataFrame if it isn't already
+            trades_df = None
+            if trades is not None:
+                try:
+                    if not isinstance(trades, pd.DataFrame):
+                        trades_df = pd.DataFrame(trades)
+                    else:
+                        trades_df = trades
+                    
+                    # Validate DataFrame is not empty and has expected columns
+                    if len(trades_df) == 0:
+                        logger.info("_create_trade_details_view: Empty trades DataFrame")
+                        trades_df = None
+                    elif 'P&L %' not in trades_df.columns:
+                        logger.warning("_create_trade_details_view: Missing 'P&L %' column in trades")
+                        # Try to continue without failing
+                except Exception as e:
+                    logger.error(f"_create_trade_details_view: Error converting trades to DataFrame: {str(e)}")
+                    trades_df = None
+            
+            # Summary metrics section with safe value extraction
+            try:
+                summary_section = dbc.Card([
+                    dbc.CardHeader(html.H5("📈 Summary Metrics", className="mb-0")),
+                    dbc.CardBody([
+                        dbc.Row([
+                            dbc.Col([
+                                html.P([
+                                    html.Strong("Win Rate: "),
+                                    f"{float(metrics.get('win_rate', 0))*100:.2f}%"
+                                ], className="mb-2"),
+                                html.P([
+                                    html.Strong("Total Trades: "),
+                                    f"{int(metrics.get('num_trades', 0))}"
+                                ], className="mb-2"),
+                                html.P([
+                                    html.Strong("CAGR: "),
+                                    f"{float(metrics.get('cagr', 0))*100:.2f}%"
+                                ], className="mb-2")
+                            ], md=3),
+                            dbc.Col([
+                                html.P([
+                                    html.Strong("Sharpe Ratio: "),
+                                    f"{float(metrics.get('sharpe_ratio', 0)):.2f}"
+                                ], className="mb-2"),
+                                html.P([
+                                    html.Strong("Max Drawdown: "),
+                                    f"{float(metrics.get('max_drawdown', 0))*100:.2f}%"
+                                ], className="mb-2"),
+                                html.P([
+                                    html.Strong("Total Return: "),
+                                    f"{float(metrics.get('total_return', 0))*100:.2f}%"
+                                ], className="mb-2")
+                            ], md=3),
+                            dbc.Col([
+                                html.P([
+                                    html.Strong("Expectancy: "),
+                                    f"{float(metrics.get('expectancy', 0))*100:.2f}%"
+                                ], className="mb-2")
+                            ], md=3)
+                        ])
                     ])
-                ])
-            ], className="mb-3")
-        
-        # Equity curve visualization
-        equity_chart = None
-        if equity_curve is not None and len(equity_curve) > 0:
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(
-                x=dates if dates else list(range(len(equity_curve))),
-                y=equity_curve,
-                mode='lines',
-                name='Equity',
-                line=dict(color='blue', width=2)
-            ))
+                ], className="mb-3")
+            except Exception as e:
+                logger.error(f"_create_trade_details_view: Error creating summary section: {str(e)}")
+                summary_section = dbc.Alert("Error displaying summary metrics.", color="warning")
             
-            fig.update_layout(
-                title='Equity Curve',
-                xaxis_title='Date',
-                yaxis_title='Equity ($)',
-                hovermode='x unified',
-                height=400
-            )
+            # Calculate additional trade statistics if trades exist
+            trade_stats_section = None
+            if trades_df is not None and len(trades_df) > 0:
+                try:
+                    # Validate required columns exist
+                    if 'P&L %' in trades_df.columns and 'Holding Period' in trades_df.columns:
+                        winning_trades = trades_df[trades_df['P&L %'] > 0]
+                        losing_trades = trades_df[trades_df['P&L %'] <= 0]
+                        
+                        avg_win = winning_trades['P&L %'].mean() if len(winning_trades) > 0 else 0
+                        avg_loss = losing_trades['P&L %'].mean() if len(losing_trades) > 0 else 0
+                        avg_holding = trades_df['Holding Period'].mean()
+                        
+                        # Handle potential division by zero or NaN
+                        profit_factor = abs(avg_win/avg_loss) if avg_loss != 0 and not np.isnan(avg_loss) else 0
+                        
+                        trade_stats_section = dbc.Card([
+                            dbc.CardHeader(html.H5("📊 Trade Statistics", className="mb-0")),
+                            dbc.CardBody([
+                                dbc.Row([
+                                    dbc.Col([
+                                        html.P([
+                                            html.Strong("Winning Trades: "),
+                                            f"{len(winning_trades)}"
+                                        ], className="mb-2"),
+                                        html.P([
+                                            html.Strong("Losing Trades: "),
+                                            f"{len(losing_trades)}"
+                                        ], className="mb-2")
+                                    ], md=3),
+                                    dbc.Col([
+                                        html.P([
+                                            html.Strong("Avg Win: "),
+                                            f"{avg_win*100:.2f}%"
+                                        ], className="mb-2"),
+                                        html.P([
+                                            html.Strong("Avg Loss: "),
+                                            f"{avg_loss*100:.2f}%"
+                                        ], className="mb-2")
+                                    ], md=3),
+                                    dbc.Col([
+                                        html.P([
+                                            html.Strong("Profit Factor: "),
+                                            f"{profit_factor:.2f}" if profit_factor > 0 else "N/A"
+                                        ], className="mb-2"),
+                                        html.P([
+                                            html.Strong("Avg Holding Period: "),
+                                            f"{avg_holding:.1f} days"
+                                        ], className="mb-2")
+                                    ], md=3)
+                                ])
+                            ])
+                        ], className="mb-3")
+                    else:
+                        logger.warning("_create_trade_details_view: Missing required columns for trade statistics")
+                except Exception as e:
+                    logger.error(f"_create_trade_details_view: Error creating trade stats section: {str(e)}")
+                    trade_stats_section = dbc.Alert("Error calculating trade statistics.", color="warning")
             
-            equity_chart = dbc.Card([
-                dbc.CardHeader(html.H5("📈 Equity Curve", className="mb-0")),
-                dbc.CardBody([dcc.Graph(figure=fig)])
-            ], className="mb-3")
-        
-        # Trade distribution chart
-        distribution_chart = None
-        if trades_df is not None and len(trades_df) > 0:
-            fig_dist = go.Figure()
-            fig_dist.add_trace(go.Histogram(
-                x=trades_df['P&L %'] * 100,
-                nbinsx=20,
-                name='P&L Distribution',
-                marker_color='steelblue'
-            ))
-            
-            fig_dist.update_layout(
-                title='Trade P&L Distribution',
-                xaxis_title='P&L (%)',
-                yaxis_title='Frequency',
-                height=300
-            )
-            
-            distribution_chart = dbc.Card([
-                dbc.CardHeader(html.H5("📊 Trade P&L Distribution", className="mb-0")),
-                dbc.CardBody([dcc.Graph(figure=fig_dist)])
-            ], className="mb-3")
-        
-        # Drawdown plot
-        drawdown_chart = None
-        if equity_curve is not None and len(equity_curve) > 0:
-            peak = np.maximum.accumulate(equity_curve)
-            drawdown = (equity_curve - peak) / peak * 100
-            
-            fig_dd = go.Figure()
-            fig_dd.add_trace(go.Scatter(
-                x=dates if dates else list(range(len(drawdown))),
-                y=drawdown,
-                fill='tozeroy',
-                name='Drawdown',
-                line=dict(color='red')
-            ))
-            
-            fig_dd.update_layout(
-                title='Drawdown Over Time',
-                xaxis_title='Date',
-                yaxis_title='Drawdown (%)',
-                height=300
-            )
-            
-            drawdown_chart = dbc.Card([
-                dbc.CardHeader(html.H5("📉 Drawdown", className="mb-0")),
-                dbc.CardBody([dcc.Graph(figure=fig_dd)])
-            ], className="mb-3")
-        
-        # Trade-by-trade table
-        trades_table = None
-        if trades_df is not None and len(trades_df) > 0:
-            trades_display = trades_df.copy()
-            if 'Entry Date' in trades_display.columns:
-                trades_display['Entry Date'] = pd.to_datetime(trades_display['Entry Date']).dt.strftime('%Y-%m-%d')
-            if 'Exit Date' in trades_display.columns:
-                trades_display['Exit Date'] = pd.to_datetime(trades_display['Exit Date']).dt.strftime('%Y-%m-%d')
-            
-            trades_table = dbc.Card([
-                dbc.CardHeader(html.H5("📋 Trade-by-Trade Details", className="mb-0")),
-                dbc.CardBody([
-                    dash_table.DataTable(
-                        data=trades_display.to_dict('records'),
-                        columns=[
-                            {'name': 'Trade No.', 'id': 'Trade No.'},
-                            {'name': 'Entry Date', 'id': 'Entry Date'},
-                            {'name': 'Entry Price', 'id': 'Entry Price', 'type': 'numeric', 'format': {'specifier': '.2f'}},
-                            {'name': 'Exit Date', 'id': 'Exit Date'},
-                            {'name': 'Exit Price', 'id': 'Exit Price', 'type': 'numeric', 'format': {'specifier': '.2f'}},
-                            {'name': 'Position', 'id': 'Position'},
-                            {'name': 'Size', 'id': 'Size'},
-                            {'name': 'Holding Period', 'id': 'Holding Period'},
-                            {'name': 'P&L %', 'id': 'P&L %', 'type': 'numeric', 'format': {'specifier': '.2%'}},
-                            {'name': 'P&L $', 'id': 'P&L $', 'type': 'numeric', 'format': {'specifier': ',.2f'}},
-                            {'name': 'MAE', 'id': 'MAE', 'type': 'numeric', 'format': {'specifier': '.2%'}},
-                            {'name': 'MFE', 'id': 'MFE', 'type': 'numeric', 'format': {'specifier': '.2%'}},
-                            {'name': 'Exit Reason', 'id': 'Exit Reason'},
-                            {'name': 'Comments', 'id': 'Comments'}
-                        ],
-                        style_table={'overflowX': 'auto'},
-                        style_cell={'textAlign': 'left', 'padding': '8px', 'fontSize': '12px', 'minWidth': '80px'},
-                        style_header={'backgroundColor': 'rgb(230, 230, 230)', 'fontWeight': 'bold', 'fontSize': '11px'},
-                        style_data_conditional=[
-                            {'if': {'row_index': 'odd'}, 'backgroundColor': 'rgb(248, 248, 248)'},
-                            {'if': {'filter_query': '{P&L %} > 0', 'column_id': 'P&L %'}, 'backgroundColor': '#d4edda', 'color': '#155724'},
-                            {'if': {'filter_query': '{P&L %} <= 0', 'column_id': 'P&L %'}, 'backgroundColor': '#f8d7da', 'color': '#721c24'}
-                        ],
-                        sort_action='native',
-                        filter_action='native',
-                        page_size=20,
-                        export_format='csv'
+            # Equity curve visualization
+            equity_chart = None
+            if equity_curve is not None and len(equity_curve) > 0:
+                try:
+                    fig = go.Figure()
+                    fig.add_trace(go.Scatter(
+                        x=dates if dates else list(range(len(equity_curve))),
+                        y=equity_curve,
+                        mode='lines',
+                        name='Equity',
+                        line=dict(color='blue', width=2)
+                    ))
+                    
+                    fig.update_layout(
+                        title='Equity Curve',
+                        xaxis_title='Date',
+                        yaxis_title='Equity ($)',
+                        hovermode='x unified',
+                        height=400
                     )
-                ])
-            ], className="mb-3")
-        else:
-            trades_table = dbc.Alert("No trade data available for this backtest.", color="warning")
-        
-        # Assemble all sections
-        sections = [summary_section]
-        if trade_stats_section:
-            sections.append(trade_stats_section)
-        if equity_chart:
-            sections.append(equity_chart)
-        if distribution_chart:
-            sections.append(distribution_chart)
-        if drawdown_chart:
-            sections.append(drawdown_chart)
-        sections.append(trades_table)
-        
-        return html.Div(sections)
+                    
+                    equity_chart = dbc.Card([
+                        dbc.CardHeader(html.H5("📈 Equity Curve", className="mb-0")),
+                        dbc.CardBody([dcc.Graph(figure=fig)])
+                    ], className="mb-3")
+                except Exception as e:
+                    logger.error(f"_create_trade_details_view: Error creating equity chart: {str(e)}")
+                    equity_chart = dbc.Alert("Error displaying equity curve chart.", color="warning")
+            
+            # Trade distribution chart
+            distribution_chart = None
+            if trades_df is not None and len(trades_df) > 0:
+                try:
+                    if 'P&L %' in trades_df.columns:
+                        fig_dist = go.Figure()
+                        fig_dist.add_trace(go.Histogram(
+                            x=trades_df['P&L %'] * 100,
+                            nbinsx=20,
+                            name='P&L Distribution',
+                            marker_color='steelblue'
+                        ))
+                        
+                        fig_dist.update_layout(
+                            title='Trade P&L Distribution',
+                            xaxis_title='P&L (%)',
+                            yaxis_title='Frequency',
+                            height=300
+                        )
+                        
+                        distribution_chart = dbc.Card([
+                            dbc.CardHeader(html.H5("📊 Trade P&L Distribution", className="mb-0")),
+                            dbc.CardBody([dcc.Graph(figure=fig_dist)])
+                        ], className="mb-3")
+                except Exception as e:
+                    logger.error(f"_create_trade_details_view: Error creating distribution chart: {str(e)}")
+                    distribution_chart = dbc.Alert("Error displaying P&L distribution chart.", color="warning")
+            
+            # Drawdown plot
+            drawdown_chart = None
+            if equity_curve is not None and len(equity_curve) > 0:
+                try:
+                    equity_curve_array = np.array(equity_curve)
+                    peak = np.maximum.accumulate(equity_curve_array)
+                    drawdown = (equity_curve_array - peak) / peak * 100
+                    
+                    fig_dd = go.Figure()
+                    fig_dd.add_trace(go.Scatter(
+                        x=dates if dates else list(range(len(drawdown))),
+                        y=drawdown,
+                        fill='tozeroy',
+                        name='Drawdown',
+                        line=dict(color='red')
+                    ))
+                    
+                    fig_dd.update_layout(
+                        title='Drawdown Over Time',
+                        xaxis_title='Date',
+                        yaxis_title='Drawdown (%)',
+                        height=300
+                    )
+                    
+                    drawdown_chart = dbc.Card([
+                        dbc.CardHeader(html.H5("📉 Drawdown", className="mb-0")),
+                        dbc.CardBody([dcc.Graph(figure=fig_dd)])
+                    ], className="mb-3")
+                except Exception as e:
+                    logger.error(f"_create_trade_details_view: Error creating drawdown chart: {str(e)}")
+                    drawdown_chart = dbc.Alert("Error displaying drawdown chart.", color="warning")
+            
+            # Trade-by-trade table
+            trades_table = None
+            if trades_df is not None and len(trades_df) > 0:
+                try:
+                    trades_display = trades_df.copy()
+                    
+                    # Safe date conversion
+                    if 'Entry Date' in trades_display.columns:
+                        try:
+                            trades_display['Entry Date'] = pd.to_datetime(trades_display['Entry Date']).dt.strftime('%Y-%m-%d')
+                        except Exception as e:
+                            logger.warning(f"_create_trade_details_view: Error formatting Entry Date: {str(e)}")
+                    
+                    if 'Exit Date' in trades_display.columns:
+                        try:
+                            trades_display['Exit Date'] = pd.to_datetime(trades_display['Exit Date']).dt.strftime('%Y-%m-%d')
+                        except Exception as e:
+                            logger.warning(f"_create_trade_details_view: Error formatting Exit Date: {str(e)}")
+                    
+                    # Define columns that exist in the DataFrame
+                    available_columns = []
+                    column_definitions = [
+                        {'name': 'Trade No.', 'id': 'Trade No.'},
+                        {'name': 'Entry Date', 'id': 'Entry Date'},
+                        {'name': 'Entry Price', 'id': 'Entry Price', 'type': 'numeric', 'format': {'specifier': '.2f'}},
+                        {'name': 'Exit Date', 'id': 'Exit Date'},
+                        {'name': 'Exit Price', 'id': 'Exit Price', 'type': 'numeric', 'format': {'specifier': '.2f'}},
+                        {'name': 'Position', 'id': 'Position'},
+                        {'name': 'Size', 'id': 'Size'},
+                        {'name': 'Holding Period', 'id': 'Holding Period'},
+                        {'name': 'P&L %', 'id': 'P&L %', 'type': 'numeric', 'format': {'specifier': '.2%'}},
+                        {'name': 'P&L $', 'id': 'P&L $', 'type': 'numeric', 'format': {'specifier': ',.2f'}},
+                        {'name': 'MAE', 'id': 'MAE', 'type': 'numeric', 'format': {'specifier': '.2%'}},
+                        {'name': 'MFE', 'id': 'MFE', 'type': 'numeric', 'format': {'specifier': '.2%'}},
+                        {'name': 'Exit Reason', 'id': 'Exit Reason'},
+                        {'name': 'Comments', 'id': 'Comments'}
+                    ]
+                    
+                    # Only include columns that exist in the DataFrame
+                    for col_def in column_definitions:
+                        if col_def['id'] in trades_display.columns:
+                            available_columns.append(col_def)
+                    
+                    if not available_columns:
+                        logger.warning("_create_trade_details_view: No valid columns found in trades DataFrame")
+                        trades_table = dbc.Alert("Trade data is available but has an unexpected format.", color="warning")
+                    else:
+                        trades_table = dbc.Card([
+                            dbc.CardHeader(html.H5("📋 Trade-by-Trade Details", className="mb-0")),
+                            dbc.CardBody([
+                                dash_table.DataTable(
+                                    data=trades_display.to_dict('records'),
+                                    columns=available_columns,
+                                    style_table={'overflowX': 'auto'},
+                                    style_cell={'textAlign': 'left', 'padding': '8px', 'fontSize': '12px', 'minWidth': '80px'},
+                                    style_header={'backgroundColor': 'rgb(230, 230, 230)', 'fontWeight': 'bold', 'fontSize': '11px'},
+                                    style_data_conditional=[
+                                        {'if': {'row_index': 'odd'}, 'backgroundColor': 'rgb(248, 248, 248)'},
+                                        {'if': {'filter_query': '{P&L %} > 0', 'column_id': 'P&L %'}, 'backgroundColor': '#d4edda', 'color': '#155724'},
+                                        {'if': {'filter_query': '{P&L %} <= 0', 'column_id': 'P&L %'}, 'backgroundColor': '#f8d7da', 'color': '#721c24'}
+                                    ],
+                                    sort_action='native',
+                                    filter_action='native',
+                                    page_size=20,
+                                    export_format='csv'
+                                )
+                            ])
+                        ], className="mb-3")
+                except Exception as e:
+                    logger.error(f"_create_trade_details_view: Error creating trades table: {str(e)}")
+                    trades_table = dbc.Alert("Error displaying trade details table.", color="warning")
+            else:
+                trades_table = dbc.Alert(
+                    [
+                        html.H6("No Trade Data Available", className="alert-heading"),
+                        html.P("This backtest did not generate any trades, or trade data was not stored."),
+                    ],
+                    color="info"
+                )
+            
+            # Assemble all sections
+            sections = [summary_section]
+            if trade_stats_section:
+                sections.append(trade_stats_section)
+            if equity_chart:
+                sections.append(equity_chart)
+            if distribution_chart:
+                sections.append(distribution_chart)
+            if drawdown_chart:
+                sections.append(drawdown_chart)
+            sections.append(trades_table)
+            
+            return html.Div(sections)
+            
+        except Exception as e:
+            # Top-level error handler for the entire method
+            logger.error(f"_create_trade_details_view: Critical error in view creation: {str(e)}", exc_info=True)
+            return dbc.Alert(
+                [
+                    html.H5("Error Creating Trade Details View", className="alert-heading"),
+                    html.P("An unexpected error occurred while creating the trade details display."),
+                    html.Hr(),
+                    html.P(f"Technical details: {str(e)}", className="mb-0 text-muted small")
+                ],
+                color="danger"
+            )

@@ -506,6 +506,8 @@ class IndicatorEngine:
             include_streak_indicators: Whether streak indicators were computed
             include_high_low_days: Whether days since prev high/low were computed
         """
+        from datetime import datetime
+        
         config = {}
         if self.config_path.exists():
             with open(self.config_path, 'r') as f:
@@ -520,8 +522,16 @@ class IndicatorEngine:
             'ema_periods': ema_periods,
             'candlestick_patterns': include_candlestick_patterns,
             'streak_indicators': include_streak_indicators,
-            'high_low_days': include_high_low_days
+            'high_low_days': include_high_low_days,
+            'last_computed': datetime.now().isoformat()
         }
+        
+        # Update global metadata
+        if '_metadata' not in config:
+            config['_metadata'] = {}
+        
+        config['_metadata']['last_computation_date'] = datetime.now().isoformat()
+        config['_metadata']['symbols_count'] = len([k for k in config.keys() if k != '_metadata'])
         
         with open(self.config_path, 'w') as f:
             json.dump(config, f, indent=2)
@@ -632,3 +642,23 @@ class IndicatorEngine:
         
         success = self.compute_and_cache_rsi_period(symbol, period)
         return success, success
+    
+    def get_metadata(self) -> Dict:
+        """
+        Get metadata about indicators computation.
+        
+        Returns:
+            Dictionary with last_computation_date and symbols_count
+        """
+        config = self.get_config()
+        metadata = config.get('_metadata', {})
+        
+        # Fallback if metadata doesn't exist
+        if not metadata:
+            symbols = self.list_available_symbols()
+            metadata = {
+                'last_computation_date': None,
+                'symbols_count': len(symbols)
+            }
+        
+        return metadata

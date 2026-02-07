@@ -13,6 +13,7 @@ Design:
 
 import os
 import json
+import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
 import numpy as np
@@ -20,6 +21,9 @@ import pandas as pd
 import zarr
 from numcodecs import Blosc, JSON
 from datetime import datetime
+
+# Configure logger
+logger = logging.getLogger(__name__)
 
 
 class BacktestStore:
@@ -279,51 +283,87 @@ class BacktestStore:
         Returns:
             Dictionary with detailed results or None if not found
         """
-        params_hash = self._hash_params(params)
-        backtest_id = f"{symbol}_{strategy}_{params_hash}_{exit_rule}"
-        
-        # Get stats from metadata
-        stats_df = self.get_stats(symbol, strategy, params, exit_rule)
-        if len(stats_df) == 0:
-            return None
-        
-        stats = stats_df.iloc[0].to_dict()
-        
-        result = {
-            'symbol': symbol,
-            'strategy': strategy,
-            'params': params,
-            'exit_rule': exit_rule,
-            'metrics': {
-                'win_rate': float(stats['win_rate']),
-                'num_trades': int(stats['num_trades']),
-                'total_return': float(stats['total_return']),
-                'cagr': float(stats['cagr']),
-                'sharpe_ratio': float(stats['sharpe_ratio']),
-                'max_drawdown': float(stats['max_drawdown']),
-                'expectancy': float(stats['expectancy'])
-            }
-        }
-        
-        # Load equity curve if available
-        equity_group = self.root.get('equity_curves')
-        if equity_group is not None and backtest_id in equity_group:
-            equity_data = equity_group[backtest_id]
-            result['equity_curve'] = equity_data[:]
+        try:
+            # Validate inputs
+            if not symbol or not strategy:
+                logger.error(f"get_detailed_results: Invalid inputs - symbol: '{symbol}', strategy: '{strategy}'")
+                return None
             
-            if 'dates' in equity_data.attrs:
-                result['dates'] = equity_data.attrs['dates']
-            if 'positions' in equity_data.attrs:
-                result['positions'] = equity_data.attrs['positions']
-        
-        # Load trade details if available
-        trade_group = self.root.get('trade_details')
-        if trade_group is not None and backtest_id in trade_group:
-            trade_json = trade_group[backtest_id][0]
-            trades_dict = json.loads(trade_json)
-            result['trades'] = pd.DataFrame(trades_dict)
-        
-        return result
+            if not isinstance(params, dict):
+                logger.warning(f"get_detailed_results: Invalid params type: {type(params)}, converting to dict")
+                params = {} if params is None else dict(params)
+            
+            params_hash = self._hash_params(params)
+            backtest_id = f"{symbol}_{strategy}_{params_hash}_{exit_rule}"
+            
+            logger.debug(f"get_detailed_results: Retrieving backtest_id: {backtest_id}")
+            
+            # Get stats from metadata
+            try:
+                stats_df = self.get_stats(symbol, strategy, params, exit_rule)
+                if len(stats_df) == 0:
+                    logger.warning(f"get_detailed_results: No stats found for {backtest_id}")
+                    return None
+            except Exception as e:
+                logger.error(f"get_detailed_results: Error retrieving stats for {backtest_id}: {str(e)}")
+                return None
+            
+            stats = stats_df.iloc[0].to_dict()
+            
+            result = {
+                'symbol': symbol,
+                'strategy': strategy,
+                'params': params,
+                'exit_rule': exit_rule,
+                'metrics': {
+                    'win_rate': float(stats.get('win_rate', 0)),
+                    'num_trades': int(stats.get('num_trades', 0)),
+                    'total_return': float(stats.get('total_return', 0)),
+                    'cagr': float(stats.get('cagr', 0)),
+                    'sharpe_ratio': float(stats.get('sharpe_ratio', 0)),
+                    'max_drawdown': float(stats.get('max_drawdown', 0)),
+                    'expectancy': float(stats.get('expectancy', 0))
+                }
+            }
+            
+            # Load equity curve if available
+            try:
+                equity_group = self.root.get('equity_curves')
+                if equity_group is not None and backtest_id in equity_group:
+                    equity_data = equity_group[backtest_id]
+                    result['equity_curve'] = equity_data[:]
+                    
+                    if 'dates' in equity_data.attrs:
+                        result['dates'] = equity_data.attrs['dates']
+                    if 'positions' in equity_data.attrs:
+                        result['positions'] = equity_data.attrs['positions']
+                    
+                    logger.debug(f"get_detailed_results: Loaded equity curve for {backtest_id}")
+                else:
+                    logger.debug(f"get_detailed_results: No equity curve found for {backtest_id}")
+            except Exception as e:
+                logger.warning(f"get_detailed_results: Error loading equity curve for {backtest_id}: {str(e)}")
+                # Continue without equity curve
+            
+            # Load trade details if available
+            try:
+                trade_group = self.root.get('trade_details')
+                if trade_group is not None and backtest_id in trade_group:
+                    trade_json = trade_group[backtest_id][0]
+                    trades_dict = json.loads(trade_json)
+                    result['trades'] = pd.DataFrame(trades_dict)
+                    logger.debug(f"get_detailed_results: Loaded {len(result['trades'])} trades for {backtest_id}")
+                else:
+                    logger.debug(f"get_detailed_results: No trade details found for {backtest_id}")
+            except Exception as e:
+                logger.warning(f"get_detailed_results: Error loading trade details for {backtest_id}: {str(e)}")
+                # Continue without trade details
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"get_detailed_results: Unexpected error: {str(e)}", exc_info=True)
+            return None
     
     def bulk_get_stats(
         self,

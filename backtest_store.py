@@ -207,11 +207,12 @@ class BacktestStore:
                 # Store as JSON in a text array
                 trades_json = json.dumps(trades_dict)
                 # Use a simple string array with sufficient length
-                # Add buffer of 100 chars for safety
+                # Add buffer for safety in case of JSON format variations
+                TRADE_JSON_BUFFER = 100
                 trade_data = trade_group.create_dataset(
                     backtest_id,
                     shape=(1,),
-                    dtype=f'U{len(trades_json) + 100}'
+                    dtype=f'U{len(trades_json) + TRADE_JSON_BUFFER}'
                 )
                 trade_data[0] = trades_json
                 
@@ -324,8 +325,9 @@ class BacktestStore:
                         stats_row = exact_match.iloc[0]
                     else:
                         # No exact match - params might have been loaded from JSON with type changes
-                        # Use the first match and log a warning
-                        logger.debug(f"get_detailed_results: No exact param hash match, using first result for {symbol}")
+                        # Use the first match but warn since this could be unexpected
+                        logger.warning(f"get_detailed_results: No exact param hash match for {symbol}_{strategy}, using first result. "
+                                      f"This may happen when params are loaded from JSON with type conversions.")
                         stats_row = stats_df.iloc[0]
                 else:
                     # No params filtering, use first result

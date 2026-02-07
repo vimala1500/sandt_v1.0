@@ -20,6 +20,9 @@ def test_trades_storage_with_trades():
     """Test that trades are stored and retrieved correctly when trades exist."""
     print("\n=== Test: Trades Storage With Trades ===")
     
+    # Set random seed for reproducible tests
+    np.random.seed(42)
+    
     with tempfile.TemporaryDirectory() as tmpdir:
         # Create backtest engine
         engine = BacktestEngine(output_path=tmpdir)
@@ -251,6 +254,9 @@ def test_trades_serialization_roundtrip():
 def test_trades_with_no_initial_symbol():
     """Test backtest without symbol doesn't crash but doesn't store."""
     print("\n=== Test: Trades With No Symbol ===")
+    
+    # Set random seed for reproducible tests
+    np.random.seed(43)
     
     with tempfile.TemporaryDirectory() as tmpdir:
         engine = BacktestEngine(output_path=tmpdir)

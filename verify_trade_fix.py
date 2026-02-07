@@ -6,6 +6,7 @@ Runs all tests and checks to ensure the fix is working correctly.
 
 import sys
 import subprocess
+import os
 
 
 def run_command(cmd, description):
@@ -15,12 +16,16 @@ def run_command(cmd, description):
     print(f"{'='*70}")
     
     try:
+        # Get the script directory to make paths relative
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        
         result = subprocess.run(
             cmd,
             shell=True,
             capture_output=True,
             text=True,
-            timeout=60
+            timeout=60,
+            cwd=script_dir  # Run in script directory
         )
         
         # Filter out warnings
@@ -55,31 +60,31 @@ def main():
     
     # Test 1: Trade data pipeline tests
     results.append(run_command(
-        "cd /home/runner/work/sandt_v1.0/sandt_v1.0 && python test_trade_data_pipeline.py 2>&1 | tail -15",
+        "python test_trade_data_pipeline.py 2>&1 | tail -15",
         "Integration Tests (test_trade_data_pipeline.py)"
     ))
     
     # Test 2: Backtest store tests
     results.append(run_command(
-        "cd /home/runner/work/sandt_v1.0/sandt_v1.0 && python test_backtest_store.py 2>&1 | tail -15",
+        "python test_backtest_store.py 2>&1 | tail -15",
         "Storage Tests (test_backtest_store.py)"
     ))
     
     # Test 3: Trade details modal tests
     results.append(run_command(
-        "cd /home/runner/work/sandt_v1.0/sandt_v1.0 && python test_trade_details_modal.py 2>&1 | tail -5",
+        "python test_trade_details_modal.py 2>&1 | tail -5",
         "UI Tests (test_trade_details_modal.py)"
     ))
     
     # Test 4: Demonstration
     results.append(run_command(
-        "cd /home/runner/work/sandt_v1.0/sandt_v1.0 && python demo_trade_fix.py 2>&1 | tail -20",
+        "python demo_trade_fix.py 2>&1 | tail -20",
         "Demonstration (demo_trade_fix.py)"
     ))
     
     # Test 5: Sample backtest verification
     results.append(run_command(
-        "cd /home/runner/work/sandt_v1.0/sandt_v1.0 && python -c \"from backtest_engine import BacktestEngine; e = BacktestEngine('./data/backtests'); s = e.store.get_all_stats(); print(f'Found {len(s)} backtests'); [print(f'  {row[\\\"symbol\\\"]:25s}: {len(e.store.get_detailed_results(row[\\\"symbol\\\"], row[\\\"strategy\\\"], row[\\\"params\\\"], row[\\\"exit_rule\\\"]).get(\\\"trades\\\", []))} trades') for _, row in s.iterrows() if e.store.get_detailed_results(row['symbol'], row['strategy'], row['params'], row['exit_rule'])]\" 2>&1",
+        "python -c \"from backtest_engine import BacktestEngine; e = BacktestEngine('./data/backtests'); s = e.store.get_all_stats(); print(f'Found {len(s)} backtests'); [print(f'  {row[\\\"symbol\\\"]:25s}: {len(e.store.get_detailed_results(row[\\\"symbol\\\"], row[\\\"strategy\\\"], row[\\\"params\\\"], row[\\\"exit_rule\\\"]).get(\\\"trades\\\", []))} trades') for _, row in s.iterrows() if e.store.get_detailed_results(row['symbol'], row['strategy'], row['params'], row['exit_rule'])]\" 2>&1",
         "Sample Data Verification"
     ))
     
